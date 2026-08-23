@@ -1,0 +1,25 @@
+v4.1.1: 海之子杯评审前修复 — 3 真 bug + 演示健壮性 + 性能/可靠性
+
+P0 紧急修复：
+- HDPE 验算量纲兼容（eps<100 视为小数自动 ×100）
+- 修复 server/index.ts CALC_REGISTRY.hdpeCheck inline 实现逻辑错误
+  （原 sigma<=10/eps<=5 判定条件写错），改为直接复用 calculate.ts 正确实现
+- 删除 /api/permission 死调用（GLM 通道不触发真工具授权）
+- KB/Calc 数字统一：SPEC.md 标过期、README.md 改 66/12、新建 CHANGELOG.md
+- 限流放宽 20/200/1000 → 40/1000/5000（演示日避免撞 429）
+- 每 60 秒清过期 IP 记录（防内存无界增长）
+- /api/* 404 JSON 兜底（防 SPA fallback 返回 HTML 让前端 fetch JSON.parse 报错）
+
+P1 性能与可靠性：
+- three.js 懒加载（HomePage + SimulatorPage React.lazy + Suspense）
+  生产 HTML 首屏不再 modulepreload 498KB three.js chunk
+- SSE keepalive（每 15s :keepalive，防长对话反代断开）
+- db 写 debounce（1 秒批量合并；新增 persistNow() 优雅退出时立即落盘）
+- SIGTERM/SIGINT/unhandledRejection/uncaughtException 监听
+  + 8s 强杀兜底
+
+P2 评审材料：
+- 参赛技术说明文档（参赛材料索引详见 README.md）
+- 核心功能介绍视频脚本（3:50 完整录屏脚本 + 录制清单）
+
+Refs: 第一届"海之子"杯 AI 智能体挑战计划 · 截止 2026-08-31

@@ -1,0 +1,12 @@
+node_modules/
+.env
+dist/
+data/
+test-screenshots/
+vite-dev.log
+server-dev.log
+*.log
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+ui-test-report.json
