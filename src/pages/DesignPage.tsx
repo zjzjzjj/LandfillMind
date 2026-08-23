@@ -614,44 +614,53 @@ function SingleModeFull(props: {
 
   return (
     <>
-      {/* 1. 参数输入（单列，每行 label + input） */}
-      <Card title="参数输入" icon={<Sliders size={13} />} hint="修改后点「立即计算」">
-        <div className="space-y-3">
-          {defs.map(p => (
-            <ParamField key={p.name} param={p} value={params[p.name]} onChange={v => updateParam(p.name, v)} />
-          ))}
-        </div>
-      </Card>
-
-      {/* 2. 计算结果（KPI / 安全系数仪表） */}
-      {result && (
-        <Card title="计算结果" icon={<Sparkles size={13} />}>
-          {isFs && FsValue !== null ? (
-            <div className="flex flex-col items-center py-2">
-              <SafetyFactorGauge Fs={FsValue} size={200} />
-              {result.ref && (
-                <div className="text-[10px] font-mono mt-3" style={{ color: 'var(--text-muted)' }}>
-                  规范：{result.ref}
-                </div>
-              )}
-              <ResultExtras extra={result.extra} />
-            </div>
-          ) : thresholds ? (
-            <ResultInterpretation
-              value={typeof result.value === 'number' ? result.value : 0}
-              unit={result.unit ?? ''}
-              label={CALC_LIST.find(c => c.id === selected)?.name ?? '计算结果'}
-              thresholds={thresholds}
-              interpretation={result.analysis ?? ''}
-              reference={result.ref}
-            />
-          ) : (
-            <PlainResult result={result} />
-          )}
-          {/* thresholds 路径额外补一个 extra 块（ResultInterpretation 自带底部） */}
-          {thresholds && <ResultExtras extra={result.extra} />}
+      {/* 1+2. 两栏：参数输入（左）+ 计算结果（右） */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-4">
+        <Card title="参数输入" icon={<Sliders size={13} />} hint="修改后点「立即计算」">
+          <div className="space-y-2">
+            {defs.map(p => (
+              <ParamField key={p.name} param={p} value={params[p.name]} onChange={v => updateParam(p.name, v)} />
+            ))}
+          </div>
         </Card>
-      )}
+
+        {result && (
+          <Card title="计算结果" icon={<Sparkles size={13} />}>
+            {isFs && FsValue !== null ? (
+              <div className="flex flex-col items-center py-2">
+                <SafetyFactorGauge Fs={FsValue} size={200} />
+                {result.ref && (
+                  <div className="text-[10px] font-mono mt-3" style={{ color: 'var(--text-muted)' }}>
+                    规范：{result.ref}
+                  </div>
+                )}
+                <ResultExtras extra={result.extra} />
+              </div>
+            ) : thresholds ? (
+              <ResultInterpretation
+                value={typeof result.value === 'number' ? result.value : 0}
+                unit={result.unit ?? ''}
+                label={CALC_LIST.find(c => c.id === selected)?.name ?? '计算结果'}
+                thresholds={thresholds}
+                interpretation={result.analysis ?? ''}
+                reference={result.ref}
+              />
+            ) : (
+              <PlainResult result={result} />
+            )}
+            {thresholds && <ResultExtras extra={result.extra} />}
+          </Card>
+        )}
+
+        {!result && (
+          <Card title="计算结果" icon={<Sparkles size={13} />}>
+            <div className="text-center text-xs py-12" style={{ color: 'var(--text-muted)' }}>
+              <Calculator size={28} className="mx-auto mb-2 opacity-30" />
+              <p>输入参数后点「立即计算」</p>
+            </div>
+          </Card>
+        )}
+      </div>
 
       {/* 3. 敏感性分析（仅 slopeFs 显著，其他计算器隐藏） */}
       {isFs && (
@@ -722,14 +731,6 @@ function SingleModeFull(props: {
           </div>
         </Card>
       )}
-
-      {/* 空状态 */}
-      {!result && !loading && (
-        <div className="text-center text-sm py-12" style={{ color: 'var(--text-muted)' }}>
-          <Calculator size={32} className="mx-auto mb-2 opacity-30" />
-          <p>输入参数后自动计算，或点上方"立即计算"</p>
-        </div>
-      )}
     </>
   );
 }
@@ -738,13 +739,13 @@ function ParamField({ param, value, onChange }: { param: NonNullable<typeof PARA
   if (param.type === 'select') {
     return (
       <div>
-        <label className="flex items-center justify-between mb-1">
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
+        <label className="flex items-center justify-between mb-0.5">
+          <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
         </label>
         <select
           value={String(value ?? param.default ?? '')}
           onChange={e => onChange(e.target.value)}
-          className="w-full text-sm px-3 py-1.5 rounded outline-none border"
+          className="w-full text-xs px-2 py-1 rounded outline-none border"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
         >
           {(param.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
@@ -755,16 +756,16 @@ function ParamField({ param, value, onChange }: { param: NonNullable<typeof PARA
   const numVal = typeof value === 'number' ? value : parseFloat(String(value ?? '0'));
   return (
     <div>
-      <label className="flex items-center justify-between mb-1">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
-        {param.unit && <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{param.unit}</span>}
+      <label className="flex items-center justify-between mb-0.5">
+        <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
+        {param.unit && <span className="text-[9px] font-mono" style={{ color: 'var(--text-muted)' }}>{param.unit}</span>}
       </label>
       <input
         type="number"
         value={Number.isFinite(numVal) ? numVal : ''}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         min={param.min} max={param.max} step="any"
-        className="w-full text-sm px-3 py-1.5 rounded outline-none border font-mono"
+        className="w-full text-xs px-2 py-1 rounded outline-none border font-mono"
         style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
       />
     </div>
