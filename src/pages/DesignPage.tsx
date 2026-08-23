@@ -215,8 +215,8 @@ export default function DesignPage() {
   const [monteResult, setMonteResult] = useState<any>(null);
   const [costInputs, setCostInputs] = useState({ capacityM3: 300000, leachateM3PerYear: 10000, monitorWells: 8 });
 
-  // 立即计算时缩短 debounce 到 0；自动计算用 300ms
-  const debouncedParams = useDebounce(params, calcTrigger > 0 ? 0 : 300);
+  // 立即计算时缩短 debounce 到 0；自动计算用 300ms（保留供敏感性等辅助计算用）
+  const debouncedParams = useDebounce(params, 300);
   const debouncedVaryParam = useDebounce(varyParam, 500);
   const debouncedMonteParams = useDebounce(monteParams, 500);
   const debouncedCompareScenarios = useDebounce(compareScenarios, 500);
@@ -247,16 +247,16 @@ export default function DesignPage() {
     setCalcTrigger(t => t + 1);
   }, []);
 
-  // ============= 实时计算 =============
+  // ============= 手动计算（不监听参数变化，只在 calcTrigger 或 selected 变化时触发） =============
   useEffect(() => {
     if (selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID) return;
-    if (!debouncedParams || Object.keys(debouncedParams).length === 0) return;
+    if (!params || Object.keys(params).length === 0) return;
     setLoading(true);
-    saveParams(selected, debouncedParams);
+    saveParams(selected, params);
     fetch(`/api/calc/${selected}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(debouncedParams),
+      body: JSON.stringify(params),
     })
       .then(r => r.json())
       .then(data => {
@@ -268,21 +268,21 @@ export default function DesignPage() {
       })
       .catch(err => setResult({ ok: false, value: NaN, grade: 'red', analysis: `网络错误：${err?.message ?? err}`, ref: '' } as CalcResult))
       .finally(() => setLoading(false));
-  }, [selected, debouncedParams, calcTrigger]);
+  }, [selected, calcTrigger]);  // 不依赖 debouncedParams —— 只在切换/按钮触发
 
-  // 敏感性
+  // 敏感性：也只在 calcTrigger 时跑
   useEffect(() => {
     if (selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID) return;
-    if (!debouncedVaryParam || !debouncedParams[debouncedVaryParam]) return;
+    if (!varyParam || !params[varyParam]) return;
     fetch('/api/calc/sensitivity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: selected, params: debouncedParams, varyParam: debouncedVaryParam, n: 24 }),
+      body: JSON.stringify({ name: selected, params, varyParam, n: 24 }),
     })
       .then(r => r.json())
       .then(d => { if (d?.xs) setSensitivity(d); })
       .catch(() => setSensitivity(null));
-  }, [selected, debouncedParams, debouncedVaryParam, calcTrigger]);
+  }, [selected, params, varyParam, calcTrigger]);
 
   // 场景对比
   useEffect(() => {
@@ -498,7 +498,7 @@ export default function DesignPage() {
 
         {/* 内容 */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-6 space-y-5">
+          <div className="max-w-3xl mx-auto px-6 py-6 pb-16 space-y-5">
             {selected === COMPARE_ID ? (
               <CompareModeFull scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} />
             ) : selected === MONTE_ID ? (
@@ -587,7 +587,7 @@ function SingleModeFull(props: {
   return (
     <>
       {/* 1. 参数输入（单列，每行 label + input） */}
-      <Card title="参数输入" icon={<Sliders size={13} />} hint={loading ? '计算中…' : '修改后自动计算（300ms）'}>
+      <Card title="参数输入" icon={<Sliders size={13} />} hint="修改后点「立即计算」">
         <div className="space-y-3">
           {defs.map(p => (
             <ParamField key={p.name} param={p} value={params[p.name]} onChange={v => updateParam(p.name, v)} />
@@ -771,19 +771,21 @@ function Card({ title, icon, hint, collapsible, expanded, onToggle, children }: 
   onToggle?: () => void;
   children: React.ReactNode;
 }) {
+  // 收起时只显示标题栏，不渲染内容
+  const showContent = !collapsible || expanded;
   return (
     <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
       <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
         {icon && <span style={{ color: 'var(--primary)' }}>{icon}</span>}
         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>{title}</span>
-        {hint && <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
+        {hint && !collapsible && <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
         {collapsible && (
-          <button onClick={onToggle} className="ml-auto p-0.5" style={{ color: 'var(--text-muted)' }}>
+          <button onClick={onToggle} className="ml-auto p-0.5" style={{ color: 'var(--text-muted)' }} title={expanded ? '收起' : '展开'}>
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         )}
       </div>
-      <div className="p-4">{children}</div>
+      {showContent && <div className="p-4">{children}</div>}
     </div>
   );
 }
