@@ -1,27 +1,22 @@
 /**
- * LandfillMind · 计算中心 v4.3（Design Center）
+ * LandfillMind · 计算中心 v4.4（简洁 2 栏布局）
  *
- * 三栏布局 + 三模式（单点 / 对比 / 蒙特卡洛）：
- *   左栏：15 个计算器 + 3 个聚合视图，分组展示
- *   中栏：参数表单（实时计算，300ms debounce + localStorage 记忆）
- *   右栏：结果面板
- *     - KPI 数字卡（ResultInterpretation）
- *     - 安全系数仪表（SafetyFactorGauge，仅 slopeFs）
- *     - 敏感性曲线（FeedbackTrendChart 改造）
- *     - 公式推导步骤（CalculationAnimation）
- *     - 导出工具栏
+ * 布局：左 240px 计算器列表 + 右 主区（单列流式）
+ *   - 顶部条：标题 + 预设切换 + 立即计算按钮
+ *   - 参数输入（单列，不撑宽）
+ *   - 计算结果（KPI 卡 + 安全系数仪表）
+ *   - 敏感性曲线
+ *   - 公式推导（折叠）
+ *   - 3 个聚合视图：场景对比 / 蒙特卡洛 / 成本估算（独立全宽视图）
  *
- * 3 套预设：保守 / 标准 / 激进（src/utils/calcPresets.ts）
- * 复用组件：ResultInterpretation, KnowledgeDistillGauge, FeedbackTrendChart,
- *          CalculationAnimation, exporter 工具
- * 新建组件：SafetyFactorGauge, HistogramChart
+ * 实时计算保留（debounce 300ms），同时支持"立即计算"按钮触发
  */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calculator, Search, Sliders, Layers, GitCompare, Activity,
-  ChevronRight, ChevronLeft, FileDown, RotateCcw, Bookmark, FileText, Sparkles,
-  TrendingUp, ShieldAlert, BarChart3, BookOpen,
+  Calculator, Search, Sliders, GitCompare, Activity,
+  ChevronRight, FileDown, RotateCcw, FileText, Sparkles,
+  TrendingUp, ShieldAlert, BookOpen, Play, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { CalcResult } from '../types';
 import {
@@ -35,30 +30,33 @@ import { HistogramChart } from '../components/HistogramChart';
 import { PRESETS, PRESET_LABELS, applyPreset, suggestVaryParam, estimateCost, type PresetName } from '../utils/calcPresets';
 
 // ============================================================
-// 计算器清单（15 个原有 + 3 个 v4.3 新挂载的）
+// 计算器清单
 // ============================================================
 const CALC_LIST = [
-  { id: 'slopeFs',          name: '堆体稳定 Fs',         desc: '圆弧滑动法计算边坡稳定安全系数',        ref: 'CJJ 176 §4.5',         cat: '边坡' },
-  { id: 'capacity',         name: '库容与年限',           desc: '填埋场库容与使用年限估算',              ref: 'CJJ 176 §3.3',         cat: '容量' },
-  { id: 'settlementHyper',  name: '沉降预测',             desc: '双曲线法沉降量预测',                    ref: 'CJJ 176 §4.6',         cat: '边坡' },
-  { id: 'optimizeWellSpacing', name: '井间距优化',          desc: '抽水井最优井间距估算',                  ref: 'CJJ 176 §5.2',         cat: '地下水' },
-  { id: 'leachateCalc',     name: '渗滤液产量',           desc: '基于降雨入渗的渗滤液日产方量',          ref: 'CJJ 176 §5.1',         cat: '水气' },
-  { id: 'moisturePredict',  name: '水量平衡',             desc: '入流-蒸散-径流-储量 水量平衡',          ref: 'CJJ 176 §5.3',         cat: '水气' },
-  { id: 'lfgYield',         name: '填埋气产气量',         desc: 'LandGEM 一阶衰减模型',                  ref: 'USEPA LandGEM',        cat: '水气' },
-  { id: 'extractionPressure', name: '抽气井压力',          desc: 'LFG 抽气井井口压力损失',                ref: 'USEPA LFG Energy',     cat: '水气' },
-  { id: 'hdpeCheck',        name: 'HDPE 膜验算',          desc: 'HDPE 膜厚度与焊缝强度验算',              ref: 'GB/T 17643',           cat: '防渗' },
-  { id: 'linerKeq',         name: '复合衬垫等效渗透',     desc: 'HDPE+GCL 复合衬垫等效渗透系数',          ref: 'GB 16889 §5.1',        cat: '防渗' },
-  { id: 'wellR',            name: '循环井影响半径',       desc: '地下水循环井影响范围',                  ref: 'HJ 25.6',              cat: '地下水' },
-  { id: 'injectR',          name: '注气驱替半径',         desc: '循环井注气影响半径估算',                ref: 'CJJ 176 §5.2',         cat: '地下水' },
-  { id: 'advect',           name: '污染物对流-弥散',      desc: '地下水中污染物迁移浓度预测',            ref: 'HJ 25.6',              cat: '地下水' },
-  { id: 'soilScreen',       name: '土壤筛选值',           desc: '建设用地土壤污染风险筛选值',            ref: 'GB 36600-2018',        cat: '地下水' },
-  { id: 'decayCalc',        name: '衰减达标年限',         desc: '污染物自然衰减达标年限',                ref: 'HJ 25.6',              cat: '地下水' },
+  { id: 'slopeFs',          name: '堆体稳定 Fs',         desc: '圆弧滑动法',                ref: 'CJJ 176 §4.5',         cat: '边坡' },
+  { id: 'capacity',         name: '库容与年限',           desc: '填埋场库容估算',              ref: 'CJJ 176 §3.3',         cat: '容量' },
+  { id: 'settlementHyper',  name: '沉降预测',             desc: '双曲线法',                   ref: 'CJJ 176 §4.6',         cat: '边坡' },
+  { id: 'optimizeWellSpacing', name: '井间距优化',          desc: '抽水井最优井间距',            ref: 'CJJ 176 §5.2',         cat: '地下水' },
+  { id: 'leachateCalc',     name: '渗滤液产量',           desc: '降雨入渗估算',                ref: 'CJJ 176 §5.1',         cat: '水气' },
+  { id: 'moisturePredict',  name: '水量平衡',             desc: '入流-蒸散-径流-储量',          ref: 'CJJ 176 §5.3',         cat: '水气' },
+  { id: 'lfgYield',         name: '填埋气产气量',         desc: 'LandGEM 一阶衰减',             ref: 'USEPA LandGEM',        cat: '水气' },
+  { id: 'extractionPressure', name: '抽气井压力',          desc: 'LFG 抽气井压力损失',          ref: 'USEPA LFG Energy',     cat: '水气' },
+  { id: 'hdpeCheck',        name: 'HDPE 膜验算',          desc: 'HDPE 膜厚度/焊缝',            ref: 'GB/T 17643',           cat: '防渗' },
+  { id: 'linerKeq',         name: '复合衬垫等效渗透',     desc: 'HDPE+GCL 等效 k',             ref: 'GB 16889 §5.1',        cat: '防渗' },
+  { id: 'wellR',            name: '循环井影响半径',       desc: '地下水循环井影响范围',         ref: 'HJ 25.6',              cat: '地下水' },
+  { id: 'injectR',          name: '注气驱替半径',         desc: '循环井注气影响半径',           ref: 'CJJ 176 §5.2',         cat: '地下水' },
+  { id: 'advect',           name: '污染物对流-弥散',      desc: '地下水迁移浓度',               ref: 'HJ 25.6',              cat: '地下水' },
+  { id: 'soilScreen',       name: '土壤筛选值',           desc: '建设用地风险筛选',             ref: 'GB 36600-2018',        cat: '地下水' },
+  { id: 'decayCalc',        name: '衰减达标年限',         desc: '自然衰减达标',                 ref: 'HJ 25.6',              cat: '地下水' },
 ];
 
 const COMPARE_ID = '__compare__';
 const MONTE_ID = '__monte__';
 const COST_ID = '__cost__';
 
+// ============================================================
+// 参数定义
+// ============================================================
 const PARAMS_MAP: Record<string, Array<{ name: string; label: string; unit?: string; default?: number | string; min?: number; max?: number; type?: 'number' | 'select'; options?: string[] }>> = {
   slopeFs: [
     { name: 'H', label: '堆体高度 H', unit: 'm', default: 30, min: 5, max: 60 },
@@ -133,26 +131,19 @@ const PARAMS_MAP: Record<string, Array<{ name: string; label: string; unit?: str
     { name: 's2', label: '沉降量 s2', unit: 'mm', default: 200, min: 0, max: 2000 },
   ],
   optimizeWellSpacing: [
-    { name: 'H', label: '含水层厚度', unit: 'm', default: 30, min: 5, max: 100 },
-    { name: 'Q', label: '单井流量', unit: 'm³/d', default: 100, min: 10, max: 1000 },
-    { name: 'k', label: '渗透系数', unit: 'm/d', default: 10, min: 0.1, max: 100 },
-    { name: 't', label: '运行时间', unit: 'd', default: 30, min: 1, max: 365 },
+    { name: 'effectiveRadius', label: '有效影响半径', unit: 'm', default: 30, min: 5, max: 100 },
   ],
   moisturePredict: [
-    { name: 'inflow', label: '日入流量', unit: 'm³/d', default: 100, min: 0, max: 5000 },
-    { name: 'et', label: '日蒸散发', unit: 'm³/d', default: 50, min: 0, max: 500 },
-    { name: 'runoff', label: '日径流', unit: 'm³/d', default: 20, min: 0, max: 500 },
-    { name: 'storageMax', label: '最大储水量', unit: 'm³', default: 5000, min: 100, max: 100000 },
+    { name: 'initialMoisture', label: '初始含水率', unit: '%', default: 60, min: 20, max: 90 },
+    { name: 'injectionPressure', label: '注气压力', unit: 'kPa', default: 15, min: 5, max: 50 },
+    { name: 'days', label: '处理天数', unit: 'd', default: 7, min: 1, max: 60 },
+    { name: 'depth', label: '处理深度', unit: 'm', default: 5, min: 1, max: 30 },
   ],
   extractionPressure: [
-    { name: 'Q', label: '单井抽气量', unit: 'm³/d', default: 500, min: 50, max: 5000 },
-    { name: 'd', label: '井径', unit: 'm', default: 0.2, min: 0.05, max: 0.5 },
-    { name: 'L', label: '井深', unit: 'm', default: 10, min: 2, max: 50 },
-    { name: 'permeability', label: '介质渗透率', unit: 'Darcy', default: 1, min: 0.01, max: 10 },
+    { name: 'injectionPressure', label: '注气压力', unit: 'kPa', default: 15, min: 5, max: 80 },
   ],
 };
 
-// 阈值配置（用于 ResultInterpretation）
 const THRESHOLDS: Record<string, Array<{ min?: number; max?: number; label: string; color: string }>> = {
   slopeFs: [
     { max: 1.0, label: '失稳', color: '#dc2626' },
@@ -178,7 +169,7 @@ const GRADE_COLOR: Record<string, string> = {
 };
 
 // ============================================================
-// Hooks：debounce + localStorage
+// Hooks
 // ============================================================
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -207,55 +198,54 @@ export default function DesignPage() {
   // ============= 状态 =============
   const [selected, setSelected] = useState<string>('slopeFs');
   const [preset, setPreset] = useState<PresetName>('standard');
-  const [params, setParams] = useState<Record<string, number | string>>(() => {
-    const defs = PARAMS_MAP['slopeFs'] ?? [];
-    const obj: Record<string, number | string> = {};
-    defs.forEach(p => { obj[p.name] = p.default ?? (p.type === 'select' ? (p.options?.[0] ?? '') : 0); });
-    return obj;
-  });
+  const [params, setParams] = useState<Record<string, number | string>>(() => defaultParams('slopeFs'));
   const [result, setResult] = useState<CalcResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [calcTrigger, setCalcTrigger] = useState(0); // 立即计算按钮
   const [varyParam, setVaryParam] = useState<string>('H');
-  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [sensitivity, setSensitivity] = useState<{ xs: number[]; ys: number[]; baseValue: number; baseX: number } | null>(null);
   const [showFormula, setShowFormula] = useState(false);
-  const [compareScenarios, setCompareScenarios] = useState<{ label: string; params: Record<string, number | string> }[]>(() => {
-    return [
-      { label: '现状', params: applyPreset('slopeFs', 'standard') },
-      { label: '加固后', params: applyPreset('slopeFs', 'conservative') },
-    ];
-  });
-  const [compareResult, setCompareResult] = useState<{ label: string; value: number; unit?: string; grade?: string; analysis?: string }[] | null>(null);
+  const [compareScenarios, setCompareScenarios] = useState(() => [
+    { label: '现状', params: applyPreset('slopeFs', 'standard') },
+    { label: '加固后', params: applyPreset('slopeFs', 'conservative') },
+  ]);
+  const [compareResult, setCompareResult] = useState<any>(null);
   const [monteParams, setMonteParams] = useState<{ param: string; std: number }[]>([{ param: 'H', std: 5 }]);
   const [monteResult, setMonteResult] = useState<any>(null);
   const [costInputs, setCostInputs] = useState({ capacityM3: 300000, leachateM3PerYear: 10000, monitorWells: 8 });
 
-  const debouncedParams = useDebounce(params, 300);
+  // 立即计算时缩短 debounce 到 0；自动计算用 300ms
+  const debouncedParams = useDebounce(params, calcTrigger > 0 ? 0 : 300);
   const debouncedVaryParam = useDebounce(varyParam, 500);
   const debouncedMonteParams = useDebounce(monteParams, 500);
   const debouncedCompareScenarios = useDebounce(compareScenarios, 500);
   const debouncedCostInputs = useDebounce(costInputs, 300);
 
-  // ============= 切换计算器：加载 localStorage / 预设 =============
+  // ============= 切换计算器 =============
   const handleSelect = useCallback((id: string) => {
     setSelected(id);
-    setSensitivity(null);
     setResult(null);
+    setSensitivity(null);
     const saved = loadSavedParams(id);
     const initial = saved ?? applyPreset(id, preset);
     setParams(initial);
     setVaryParam(suggestVaryParam(id, initial));
+    setCalcTrigger(t => t + 1); // 切换时立即算一次
   }, [preset]);
 
-  // 切换预设：覆盖当前计算器的参数
   const handlePresetChange = useCallback((p: PresetName) => {
     setPreset(p);
     if (selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID) return;
     const newParams = applyPreset(selected, p);
     setParams(newParams);
     setVaryParam(suggestVaryParam(selected, newParams));
+    setCalcTrigger(t => t + 1);
   }, [selected]);
+
+  const handleCalculate = useCallback(() => {
+    setCalcTrigger(t => t + 1);
+  }, []);
 
   // ============= 实时计算 =============
   useEffect(() => {
@@ -278,9 +268,9 @@ export default function DesignPage() {
       })
       .catch(err => setResult({ ok: false, value: NaN, grade: 'red', analysis: `网络错误：${err?.message ?? err}`, ref: '' } as CalcResult))
       .finally(() => setLoading(false));
-  }, [selected, debouncedParams]);
+  }, [selected, debouncedParams, calcTrigger]);
 
-  // ============= 敏感性分析 =============
+  // 敏感性
   useEffect(() => {
     if (selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID) return;
     if (!debouncedVaryParam || !debouncedParams[debouncedVaryParam]) return;
@@ -290,22 +280,16 @@ export default function DesignPage() {
       body: JSON.stringify({ name: selected, params: debouncedParams, varyParam: debouncedVaryParam, n: 24 }),
     })
       .then(r => r.json())
-      .then(d => {
-        if (d?.xs) setSensitivity(d);
-      })
+      .then(d => { if (d?.xs) setSensitivity(d); })
       .catch(() => setSensitivity(null));
-  }, [selected, debouncedParams, debouncedVaryParam]);
+  }, [selected, debouncedParams, debouncedVaryParam, calcTrigger]);
 
-  // ============= 场景对比 =============
+  // 场景对比
   useEffect(() => {
     if (selected !== COMPARE_ID) return;
     if (debouncedCompareScenarios.length < 2) return;
-    // 选第一个场景的计算器作为对比基准
     const baseParams = debouncedCompareScenarios[0].params;
-    const sampleId = Object.keys(PARAMS_MAP).find(id => {
-      const defs = PARAMS_MAP[id];
-      return defs.every(d => baseParams[d.name] !== undefined);
-    }) ?? 'slopeFs';
+    const sampleId = Object.keys(PARAMS_MAP).find(id => PARAMS_MAP[id].every(d => baseParams[d.name] !== undefined)) ?? 'slopeFs';
     fetch('/api/calc/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -316,7 +300,7 @@ export default function DesignPage() {
       .catch(() => setCompareResult(null));
   }, [selected, debouncedCompareScenarios]);
 
-  // ============= 蒙特卡洛 =============
+  // 蒙特卡洛
   useEffect(() => {
     if (selected !== MONTE_ID) return;
     if (debouncedMonteParams.length === 0) return;
@@ -329,13 +313,7 @@ export default function DesignPage() {
     fetch('/api/calc/montecarlo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'slopeFs',
-        params: baseParams,
-        paramDist,
-        threshold: { op: '<', value: 1.30 },
-        iterations: 500,
-      }),
+      body: JSON.stringify({ name: 'slopeFs', params: baseParams, paramDist, threshold: { op: '<', value: 1.30 }, iterations: 500 }),
     })
       .then(r => r.json())
       .then(d => setMonteResult(d))
@@ -362,7 +340,6 @@ export default function DesignPage() {
     downloadJSON(timestampName('计算书', 'json'), { calcName: calcItem?.name, calcId: selected, params, result, sensitivity });
   };
 
-  // ============= 视图分组 =============
   const groupedCalcs = useMemo(() => {
     const cats = ['边坡', '容量', '水气', '防渗', '地下水'] as const;
     const map: Record<string, typeof CALC_LIST> = {};
@@ -373,15 +350,15 @@ export default function DesignPage() {
   }, [search]);
 
   const selectedCalc = CALC_LIST.find(c => c.id === selected);
+  const costResult = useMemo(() => estimateCost(debouncedCostInputs), [debouncedCostInputs]);
 
-  // 公式步骤（用于 CalculationAnimation）
+  // 公式步骤
   const formulaSteps = useMemo(() => {
     if (!result || selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID) return [];
-    const calcId = selected;
     const steps: { label: string; formula: string; detail: string; result?: string }[] = [];
     const paramsDisplay = Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ');
-    steps.push({ label: '1. 输入参数', formula: `params = { ${paramsDisplay} }`, detail: '来自表单 + 实时校验' });
-    if (calcId === 'slopeFs' && typeof params.H === 'number' && typeof params.beta === 'number' && typeof params.gamma === 'number' && typeof params.c === 'number' && typeof params.phi === 'number') {
+    steps.push({ label: '1. 输入参数', formula: `params = { ${paramsDisplay} }`, detail: '来自表单' });
+    if (selected === 'slopeFs' && typeof params.H === 'number' && typeof params.beta === 'number' && typeof params.gamma === 'number' && typeof params.c === 'number' && typeof params.phi === 'number') {
       const H = params.H, beta = params.beta, gamma = params.gamma, c = params.c, phi = params.phi;
       const tanPhi = Math.tan(phi * Math.PI / 180);
       const alpha = Math.atan(1 / beta) / 2;
@@ -389,49 +366,44 @@ export default function DesignPage() {
       const W = 0.5 * gamma * H * H * (1 + 1 / beta);
       const Ls = W / (gamma * cosA * H / 2);
       const Fs = (c * Ls + W * cosA * cosA * tanPhi) / (W * sinA * cosA);
-      steps.push({ label: '2. 重度 · 水位修正', formula: 'γ_eff = γ', detail: `γ=${gamma} kN/m³` });
-      steps.push({ label: '3. 弧面参数', formula: 'α = atan(1/β) / 2', detail: `α = ${(alpha * 180 / Math.PI).toFixed(2)}°` });
-      steps.push({ label: '4. 滑动力 W', formula: 'W = ½ · γ · H² · (1 + 1/β)', detail: `W = ${W.toFixed(0)} kN/m` });
-      steps.push({ label: '5. 弧长 Ls', formula: 'Ls = W / (γ · cosα · H / 2)', detail: `Ls = ${Ls.toFixed(1)} m` });
-      steps.push({ label: '6. 安全系数 Fs', formula: 'Fs = (c·Ls + W·cos²α·tanφ) / (W·sinα·cosα)', detail: `Fs = ${Fs.toFixed(2)}`, result: `≥ 1.30 ? ${Fs >= 1.30 ? '✓ 满足' : '✗ 不满足'}` });
+      steps.push({ label: '2. 弧面参数', formula: 'α = atan(1/β) / 2', detail: `α = ${(alpha * 180 / Math.PI).toFixed(2)}°` });
+      steps.push({ label: '3. 滑动力 W', formula: 'W = ½ · γ · H² · (1 + 1/β)', detail: `W = ${W.toFixed(0)} kN/m` });
+      steps.push({ label: '4. 弧长 Ls', formula: 'Ls = W / (γ · cosα · H / 2)', detail: `Ls = ${Ls.toFixed(1)} m` });
+      steps.push({ label: '5. 安全系数 Fs', formula: 'Fs = (c·Ls + W·cos²α·tanφ) / (W·sinα·cosα)', detail: `Fs = ${Fs.toFixed(2)}`, result: `≥ 1.30 ? ${Fs >= 1.3 ? '✓ 满足' : '✗ 不满足'}` });
     } else {
-      steps.push({ label: '2. 代入计算器', formula: `POST /api/calc/${calcId}`, detail: '后端 calculate.ts 已实现' });
+      steps.push({ label: '2. 代入计算器', formula: `POST /api/calc/${selected}`, detail: '后端 calculate.ts 已实现' });
       steps.push({ label: '3. 输出', formula: 'CalcResult { value, grade, analysis, ref }', detail: result.analysis?.slice(0, 60) ?? '' });
     }
     return steps;
   }, [selected, params, result]);
 
-  // 敏感性曲线数据
   const sensitivityData = useMemo(() => {
     if (!sensitivity) return [];
     return sensitivity.xs.map((x, i) => ({ date: String(x.toFixed(1)), up: sensitivity.ys[i] || 0, down: 0 }));
   }, [sensitivity]);
 
-  // 成本估算
-  const costResult = useMemo(() => estimateCost(debouncedCostInputs), [debouncedCostInputs]);
-
   // ============= 渲染 =============
   return (
-    <div className="flex h-[100dvh] w-[100vw] overflow-hidden" style={{ backgroundColor: 'var(--bg-base)' }}>
-      {/* 左栏：计算器列表 */}
+    <div className="flex h-[100dvh] w-[100vw]" style={{ backgroundColor: 'var(--bg-base)' }}>
+      {/* 左侧 240px 固定栏：计算器列表 */}
       <aside
         className="flex-shrink-0 flex flex-col overflow-hidden"
-        style={{ width: 280, backgroundColor: 'var(--bg-surface)', borderRight: '1px solid var(--border)' }}
+        style={{ width: 240, backgroundColor: 'var(--bg-surface)', borderRight: '1px solid var(--border)' }}
       >
-        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="px-3 py-3 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2 mb-2">
-            <Calculator size={16} style={{ color: 'var(--primary)' }} />
+            <Calculator size={15} style={{ color: 'var(--primary)' }} />
             <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>计算中心</span>
             <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded font-mono" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-              v4.3
+              v4.4
             </span>
           </div>
           <div className="relative">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="搜索计算器..."
+              placeholder="搜索..."
               className="w-full text-xs pl-7 pr-2 py-1.5 rounded outline-none border"
               style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
             />
@@ -448,15 +420,14 @@ export default function DesignPage() {
                   <button
                     key={c.id}
                     onClick={() => handleSelect(c.id)}
-                    className="w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center gap-1.5"
+                    className="w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors"
                     style={{
                       backgroundColor: selected === c.id ? 'rgba(14,165,183,0.10)' : 'transparent',
                       color: selected === c.id ? 'var(--primary)' : 'var(--text-secondary)',
                       borderLeft: selected === c.id ? '2px solid var(--primary)' : '2px solid transparent',
                     }}
                   >
-                    <ChevronRight size={10} className="opacity-60 shrink-0" />
-                    <span className="truncate font-medium">{c.name}</span>
+                    <div className="truncate font-medium">{c.name}</div>
                   </button>
                 ))}
               </div>
@@ -467,50 +438,17 @@ export default function DesignPage() {
             高级分析
           </div>
           <div className="space-y-0.5">
-            <button
-              onClick={() => { setSelected(COMPARE_ID); setResult(null); setSensitivity(null); }}
-              className="w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center gap-1.5"
-              style={{
-                backgroundColor: selected === COMPARE_ID ? 'rgba(14,165,183,0.10)' : 'transparent',
-                color: selected === COMPARE_ID ? 'var(--primary)' : 'var(--text-secondary)',
-                borderLeft: selected === COMPARE_ID ? '2px solid var(--primary)' : '2px solid transparent',
-              }}
-            >
-              <GitCompare size={10} className="opacity-60" />
-              <span className="font-medium">场景对比</span>
-            </button>
-            <button
-              onClick={() => { setSelected(MONTE_ID); setResult(null); setSensitivity(null); }}
-              className="w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center gap-1.5"
-              style={{
-                backgroundColor: selected === MONTE_ID ? 'rgba(14,165,183,0.10)' : 'transparent',
-                color: selected === MONTE_ID ? 'var(--primary)' : 'var(--text-secondary)',
-                borderLeft: selected === MONTE_ID ? '2px solid var(--primary)' : '2px solid transparent',
-              }}
-            >
-              <Activity size={10} className="opacity-60" />
-              <span className="font-medium">蒙特卡洛风险</span>
-            </button>
-            <button
-              onClick={() => { setSelected(COST_ID); setResult(null); setSensitivity(null); }}
-              className="w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center gap-1.5"
-              style={{
-                backgroundColor: selected === COST_ID ? 'rgba(14,165,183,0.10)' : 'transparent',
-                color: selected === COST_ID ? 'var(--primary)' : 'var(--text-secondary)',
-                borderLeft: selected === COST_ID ? '2px solid var(--primary)' : '2px solid transparent',
-              }}
-            >
-              <TrendingUp size={10} className="opacity-60" />
-              <span className="font-medium">成本估算</span>
-            </button>
+            <SideNavItem icon={<GitCompare size={12} />} label="场景对比" active={selected === COMPARE_ID} onClick={() => { setSelected(COMPARE_ID); setResult(null); setSensitivity(null); }} />
+            <SideNavItem icon={<Activity size={12} />} label="蒙特卡洛" active={selected === MONTE_ID} onClick={() => { setSelected(MONTE_ID); setResult(null); setSensitivity(null); }} />
+            <SideNavItem icon={<TrendingUp size={12} />} label="成本估算" active={selected === COST_ID} onClick={() => { setSelected(COST_ID); setResult(null); setSensitivity(null); }} />
           </div>
         </div>
       </aside>
 
-      {/* 中栏：参数 + 预设 */}
+      {/* 主区：单列流式 */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {/* 顶栏：预设切换 */}
-        <div className="flex items-center gap-3 px-6 py-3 border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
+        {/* 顶部条 */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b shrink-0" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <Sliders size={14} style={{ color: 'var(--primary)' }} />
             <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
@@ -526,6 +464,7 @@ export default function DesignPage() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-1.5">
+            {/* 预设 */}
             {(['conservative', 'standard', 'aggressive'] as PresetName[]).map(p => (
               <button
                 key={p}
@@ -542,121 +481,87 @@ export default function DesignPage() {
                 {PRESET_LABELS[p].name}
               </button>
             ))}
-            <button
-              onClick={() => handlePresetChange(preset)}
-              disabled={selected === COMPARE_ID || selected === MONTE_ID || selected === COST_ID}
-              className="text-[10px] px-2 py-1 rounded font-medium disabled:opacity-30"
-              style={{ color: 'var(--text-muted)' }}
-              title="重置当前预设"
-            >
-              <RotateCcw size={11} className="inline" />
-            </button>
+            {/* 立即计算按钮 */}
+            {selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && (
+              <button
+                onClick={handleCalculate}
+                disabled={loading}
+                className="ml-2 text-xs px-3 py-1.5 rounded font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                style={{ backgroundColor: 'var(--primary)', color: '#fff' }}
+              >
+                {loading ? <Activity size={12} className="animate-spin" /> : <Play size={12} />}
+                {loading ? '计算中' : '立即计算'}
+              </button>
+            )}
           </div>
         </div>
 
         {/* 内容 */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {selected === COMPARE_ID ? (
-            <CompareMode scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} />
-          ) : selected === MONTE_ID ? (
-            <MonteCarloMode
-              params={monteParams} setParams={setMonteParams}
-              preset={preset}
-              result={monteResult}
-            />
-          ) : selected === COST_ID ? (
-            <CostMode inputs={costInputs} setInputs={setCostInputs} result={costResult} />
-          ) : (
-            <SingleMode
-              selected={selected}
-              params={params}
-              result={result}
-              loading={loading}
-              varyParam={varyParam}
-              setVaryParam={setVaryParam}
-              sensitivity={sensitivity}
-              sensitivityData={sensitivityData}
-              formulaSteps={formulaSteps}
-              showFormula={showFormula}
-              setShowFormula={setShowFormula}
-              updateParam={updateParam}
-            />
-          )}
-        </div>
-      </main>
-
-      {/* 右栏：结果面板（浮动覆盖，不占布局空间，避免被挤出视口） */}
-      {rightCollapsed ? (
-        // 折叠态：32px 窄条，浮动在右下角
-        <button
-          onClick={() => setRightCollapsed(false)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5 py-3 px-1.5 rounded-l-xl shadow-lg transition-colors"
-          style={{ backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', color: 'var(--primary)' }}
-          title="展开结果面板"
-        >
-          <ChevronLeft size={16} />
-          <div className="[writing-mode:vertical-rl] text-[10px] font-semibold tracking-widest" style={{ color: 'var(--text-muted)' }}>
-            结果面板
-          </div>
-        </button>
-      ) : (
-        <aside
-          className="fixed right-0 top-0 bottom-0 z-30 flex flex-col overflow-hidden shadow-2xl"
-          style={{ width: 340, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
-        >
-          <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-            <Sparkles size={14} style={{ color: 'var(--primary)' }} />
-            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>结果面板</span>
-            {loading && <span className="text-[10px] ml-auto animate-pulse" style={{ color: 'var(--text-muted)' }}>计算中…</span>}
-            <button
-              onClick={() => setRightCollapsed(true)}
-              className={`p-1 rounded transition-colors ${loading ? '' : 'ml-auto'}`}
-              style={{ color: 'var(--text-muted)' }}
-              title="折叠结果面板"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {selected === COMPARE_ID && compareResult && (
-              <CompareResultPanel results={compareResult} />
-            )}
-            {selected === MONTE_ID && monteResult && (
-              <MonteCarloResultPanel result={monteResult} preset={preset} />
-            )}
-            {selected === COST_ID && (
-              <CostResultPanel result={costResult} inputs={debouncedCostInputs} />
-            )}
-            {selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && result && (
-              <SingleResultPanel
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-6 py-6 space-y-5">
+            {selected === COMPARE_ID ? (
+              <CompareModeFull scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} />
+            ) : selected === MONTE_ID ? (
+              <MonteCarloFull
+                params={monteParams} setParams={setMonteParams}
+                preset={preset} result={monteResult}
+              />
+            ) : selected === COST_ID ? (
+              <CostFull inputs={costInputs} setInputs={setCostInputs} result={costResult} />
+            ) : (
+              <SingleModeFull
                 selected={selected}
-                result={result}
                 params={params}
+                result={result}
+                loading={loading}
+                varyParam={varyParam}
+                setVaryParam={setVaryParam}
                 sensitivity={sensitivity}
+                sensitivityData={sensitivityData}
+                formulaSteps={formulaSteps}
                 showFormula={showFormula}
                 setShowFormula={setShowFormula}
+                updateParam={updateParam}
                 onExportMd={exportMd}
                 onExportHtml={exportHtml}
                 onExportJson={exportJson}
               />
             )}
-          {!result && selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && (
-            <div className="text-center text-xs py-12" style={{ color: 'var(--text-muted)' }}>
-              <Calculator size={28} className="mx-auto mb-2 opacity-30" />
-              <p>调整左侧参数，结果会实时显示</p>
-            </div>
-          )}
+          </div>
         </div>
-        </aside>
-      )}
+      </main>
     </div>
   );
 }
 
+function defaultParams(calcId: string): Record<string, number | string> {
+  const defs = PARAMS_MAP[calcId] ?? [];
+  const obj: Record<string, number | string> = {};
+  defs.forEach(p => { obj[p.name] = p.default ?? (p.type === 'select' ? (p.options?.[0] ?? '') : 0); });
+  return obj;
+}
+
+function SideNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center gap-1.5"
+      style={{
+        backgroundColor: active ? 'rgba(14,165,183,0.10)' : 'transparent',
+        color: active ? 'var(--primary)' : 'var(--text-secondary)',
+        borderLeft: active ? '2px solid var(--primary)' : '2px solid transparent',
+      }}
+    >
+      <span className="opacity-70">{icon}</span>
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+}
+
 // ============================================================
-// 单计算器模式（中栏）
+// 单计算器（主区）— 单列流式
 // ============================================================
-function SingleMode(props: {
+function SingleModeFull(props: {
   selected: string;
   params: Record<string, number | string>;
   result: CalcResult | null;
@@ -669,30 +574,58 @@ function SingleMode(props: {
   showFormula: boolean;
   setShowFormula: (v: boolean) => void;
   updateParam: (name: string, value: number | string) => void;
+  onExportMd: () => void;
+  onExportHtml: () => void;
+  onExportJson: () => void;
 }) {
-  const { selected, params, result, loading, varyParam, setVaryParam, sensitivity, sensitivityData, formulaSteps, showFormula, setShowFormula, updateParam } = props;
+  const { selected, params, result, loading, varyParam, setVaryParam, sensitivity, sensitivityData, formulaSteps, showFormula, setShowFormula, updateParam, onExportMd, onExportHtml, onExportJson } = props;
   const defs = PARAMS_MAP[selected] ?? [];
   const isFs = selected === 'slopeFs';
+  const FsValue = isFs && result && typeof result.value === 'number' ? result.value : null;
+  const thresholds = THRESHOLDS[selected];
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <section>
-        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>
-          参数输入 · 实时计算
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
+    <>
+      {/* 1. 参数输入（单列，每行 label + input） */}
+      <Card title="参数输入" icon={<Sliders size={13} />} hint={loading ? '计算中…' : '修改后自动计算（300ms）'}>
+        <div className="space-y-3">
           {defs.map(p => (
             <ParamField key={p.name} param={p} value={params[p.name]} onChange={v => updateParam(p.name, v)} />
           ))}
         </div>
-      </section>
+      </Card>
 
-      {isFs && result && (
-        <section>
-          <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>
-            敏感性分析 · {varyParam} 变化对 Fs 的影响
-          </h3>
-          <div className="flex items-center gap-2 mb-2">
+      {/* 2. 计算结果（KPI / 安全系数仪表） */}
+      {result && (
+        <Card title="计算结果" icon={<Sparkles size={13} />}>
+          {isFs && FsValue !== null ? (
+            <div className="flex flex-col items-center py-2">
+              <SafetyFactorGauge Fs={FsValue} size={200} />
+              {result.ref && (
+                <div className="text-[10px] font-mono mt-3" style={{ color: 'var(--text-muted)' }}>
+                  规范：{result.ref}
+                </div>
+              )}
+            </div>
+          ) : thresholds ? (
+            <ResultInterpretation
+              value={typeof result.value === 'number' ? result.value : 0}
+              unit={result.unit ?? ''}
+              label={CALC_LIST.find(c => c.id === selected)?.name ?? '计算结果'}
+              thresholds={thresholds}
+              interpretation={result.analysis ?? ''}
+              reference={result.ref}
+            />
+          ) : (
+            <PlainResult result={result} />
+          )}
+        </Card>
+      )}
+
+      {/* 3. 敏感性分析（仅 slopeFs 显著，其他计算器隐藏） */}
+      {isFs && (
+        <Card title="敏感性分析" icon={<TrendingUp size={13} />}>
+          <div className="flex flex-wrap items-center gap-1.5 mb-2">
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>变分参数：</span>
             {defs.filter(p => typeof params[p.name] === 'number').map(p => (
               <button
@@ -709,39 +642,64 @@ function SingleMode(props: {
             ))}
           </div>
           {sensitivityData.length > 0 ? (
-            <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
+            <>
               <FeedbackTrendChart data={sensitivityData} height={180} />
               <div className="mt-2 text-[10px] font-mono flex items-center gap-3" style={{ color: 'var(--text-muted)' }}>
-                <span>基准: {sensitivity?.baseX?.toFixed(2)} → Fs = {sensitivity?.baseValue?.toFixed(2)}</span>
+                <span>基准：{sensitivity?.baseX?.toFixed(2)} → Fs = {sensitivity?.baseValue?.toFixed(2)}</span>
                 {sensitivity && sensitivity.baseValue && sensitivity.baseValue < 1.3 && (
                   <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}>
-                    <ShieldAlert size={9} className="inline mr-0.5" /> 低于规范
+                    <ShieldAlert size={9} className="inline mr-0.5" />低于规范
                   </span>
                 )}
               </div>
-            </div>
+            </>
           ) : (
-            <div className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>计算中...</div>
+            <div className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>计算中…</div>
           )}
-        </section>
+        </Card>
       )}
 
-      <section>
-        <button
-          onClick={() => setShowFormula(!showFormula)}
-          className="text-xs font-semibold uppercase tracking-widest flex items-center gap-1.5"
-          style={{ color: 'var(--text-muted)' }}
+      {/* 4. 公式推导（折叠） */}
+      {formulaSteps.length > 0 && (
+        <Card
+          title="公式推导"
+          icon={<BookOpen size={13} />}
+          collapsible
+          expanded={showFormula}
+          onToggle={() => setShowFormula(!showFormula)}
         >
-          <BookOpen size={12} />
-          公式推导 {showFormula ? '▾' : '▸'}
-        </button>
-        {showFormula && formulaSteps.length > 0 && (
-          <div className="mt-3">
-            <CalculationAnimation steps={formulaSteps} autoPlay={false} speed={800} title="本计算器公式步骤" />
+          <CalculationAnimation steps={formulaSteps} autoPlay={false} speed={800} title="" />
+        </Card>
+      )}
+
+      {/* 5. 导出 */}
+      {result && (
+        <Card title="导出计算书" icon={<FileDown size={13} />}>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={onExportMd} className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              <FileDown size={11} /> Markdown
+            </button>
+            <button onClick={onExportHtml} className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              <FileText size={11} /> HTML·PDF
+            </button>
+            <button onClick={onExportJson} className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              <FileDown size={11} /> JSON
+            </button>
           </div>
-        )}
-      </section>
-    </div>
+        </Card>
+      )}
+
+      {/* 空状态 */}
+      {!result && !loading && (
+        <div className="text-center text-sm py-12" style={{ color: 'var(--text-muted)' }}>
+          <Calculator size={32} className="mx-auto mb-2 opacity-30" />
+          <p>输入参数后自动计算，或点上方"立即计算"</p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -749,13 +707,13 @@ function ParamField({ param, value, onChange }: { param: NonNullable<typeof PARA
   if (param.type === 'select') {
     return (
       <div>
-        <label className="flex items-center justify-between mb-1.5">
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
+        <label className="flex items-center justify-between mb-1">
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
         </label>
         <select
           value={String(value ?? param.default ?? '')}
           onChange={e => onChange(e.target.value)}
-          className="w-full text-sm px-2 py-1.5 rounded outline-none border font-mono"
+          className="w-full text-sm px-3 py-1.5 rounded outline-none border"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
         >
           {(param.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
@@ -766,8 +724,8 @@ function ParamField({ param, value, onChange }: { param: NonNullable<typeof PARA
   const numVal = typeof value === 'number' ? value : parseFloat(String(value ?? '0'));
   return (
     <div>
-      <label className="flex items-center justify-between mb-1.5">
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
+      <label className="flex items-center justify-between mb-1">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{param.label}</span>
         {param.unit && <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{param.unit}</span>}
       </label>
       <input
@@ -775,110 +733,68 @@ function ParamField({ param, value, onChange }: { param: NonNullable<typeof PARA
         value={Number.isFinite(numVal) ? numVal : ''}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         min={param.min} max={param.max} step="any"
-        className="w-full text-sm px-2 py-1.5 rounded outline-none border font-mono"
+        className="w-full text-sm px-3 py-1.5 rounded outline-none border font-mono"
         style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
       />
     </div>
   );
 }
 
-// ============================================================
-// 单结果面板（右栏）
-// ============================================================
-function SingleResultPanel(props: {
-  selected: string;
-  result: CalcResult;
-  params: Record<string, number | string>;
-  sensitivity: { xs: number[]; ys: number[]; baseValue: number; baseX: number } | null;
-  showFormula: boolean;
-  setShowFormula: (v: boolean) => void;
-  onExportMd: () => void;
-  onExportHtml: () => void;
-  onExportJson: () => void;
-}) {
-  const { selected, result, onExportMd, onExportHtml, onExportJson } = props;
-  const isFs = selected === 'slopeFs';
-  const FsValue = isFs && typeof result.value === 'number' ? result.value : null;
-  const thresholds = THRESHOLDS[selected];
-  const calcItem = CALC_LIST.find(c => c.id === selected);
-
+function PlainResult({ result }: { result: CalcResult }) {
   return (
-    <>
-      {/* 标题 */}
-      <div>
-        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>{calcItem?.cat}</div>
-        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{calcItem?.name}</h2>
-        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{calcItem?.desc}</p>
+    <div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-3xl font-bold font-mono" style={{ color: GRADE_COLOR[result.grade] ?? 'var(--text-primary)' }}>
+          {typeof result.value === 'number' ? result.value.toFixed(2) : '-'}
+        </span>
+        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{result.unit}</span>
       </div>
-
-      {/* 主结果：Fs 专用仪表 / 其他用 ResultInterpretation */}
-      {isFs && FsValue !== null ? (
-        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-          <div className="flex items-center justify-center py-3">
-            <SafetyFactorGauge Fs={FsValue} size={200} />
-          </div>
-          {result.ref && (
-            <div className="px-3 py-2 border-t text-[10px] font-mono" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-              规范：{result.ref}
-            </div>
-          )}
-        </div>
-      ) : thresholds ? (
-        <ResultInterpretation
-          value={typeof result.value === 'number' ? result.value : 0}
-          unit={result.unit ?? ''}
-          label={calcItem?.name ?? '计算结果'}
-          thresholds={thresholds}
-          interpretation={result.analysis ?? ''}
-          reference={result.ref}
-        />
-      ) : (
-        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>结果</div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold font-mono" style={{ color: GRADE_COLOR[result.grade] ?? 'var(--text-primary)' }}>
-              {typeof result.value === 'number' ? result.value.toFixed(2) : '-'}
-            </span>
-            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{result.unit}</span>
-          </div>
-          <p className="text-xs mt-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{result.analysis}</p>
-          {result.ref && (
-            <div className="mt-2 pt-2 border-t text-[10px] font-mono" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-              规范：{result.ref}
-            </div>
-          )}
+      <p className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{result.analysis}</p>
+      {result.ref && (
+        <div className="mt-2 pt-2 border-t text-[10px] font-mono" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          规范：{result.ref}
         </div>
       )}
-
-      {/* 导出 */}
-      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div className="text-[10px] font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>导出计算书</div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={onExportMd} className="flex-1 text-[11px] px-2 py-1.5 rounded border flex items-center justify-center gap-1"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            <FileDown size={11} /> MD
-          </button>
-          <button onClick={onExportHtml} className="flex-1 text-[11px] px-2 py-1.5 rounded border flex items-center justify-center gap-1"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            <FileText size={11} /> HTML·PDF
-          </button>
-          <button onClick={onExportJson} className="flex-1 text-[11px] px-2 py-1.5 rounded border flex items-center justify-center gap-1"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            <FileDown size={11} /> JSON
-          </button>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
 
 // ============================================================
-// 场景对比模式
+// 通用 Card 容器
 // ============================================================
-function CompareMode({ scenarios, setScenarios, result }: {
+function Card({ title, icon, hint, collapsible, expanded, onToggle, children }: {
+  title: string;
+  icon?: React.ReactNode;
+  hint?: string;
+  collapsible?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
+      <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
+        {icon && <span style={{ color: 'var(--primary)' }}>{icon}</span>}
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>{title}</span>
+        {hint && <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
+        {collapsible && (
+          <button onClick={onToggle} className="ml-auto p-0.5" style={{ color: 'var(--text-muted)' }}>
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// 场景对比（全宽视图）
+// ============================================================
+function CompareModeFull({ scenarios, setScenarios, result }: {
   scenarios: { label: string; params: Record<string, number | string> }[];
   setScenarios: (s: { label: string; params: Record<string, number | string> }[]) => void;
-  result: { label: string; value: number; unit?: string; grade?: string; analysis?: string }[] | null;
+  result: any;
 }) {
   const update = (i: number, field: 'label' | string, value: string) => {
     setScenarios(scenarios.map((s, idx) => {
@@ -894,97 +810,81 @@ function CompareMode({ scenarios, setScenarios, result }: {
   };
 
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div>
-        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <GitCompare size={14} style={{ color: 'var(--primary)' }} /> 多工况对比（统一用 slopeFs 计算器）
-        </h3>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          给同一计算器配多组参数，看 Fs 等指标在加固/降载/水位调整前后的差异。
-        </p>
-      </div>
-      <div className="space-y-3">
-        {scenarios.map((sc, i) => (
-          <div key={i} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                value={sc.label}
-                onChange={e => update(i, 'label', e.target.value)}
-                className="text-sm font-semibold flex-1 px-2 py-1 rounded outline-none border"
-                style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-              />
-              <select
-                onChange={e => setPreset(i, e.target.value as PresetName)}
-                className="text-[10px] px-2 py-1 rounded border font-mono"
-                style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-              >
-                <option value="conservative">保守</option>
-                <option value="standard" selected>标准</option>
-                <option value="aggressive">激进</option>
-              </select>
-              {scenarios.length > 2 && (
-                <button onClick={() => remove(i)} className="text-[10px] px-1.5 py-1 rounded" style={{ color: '#dc2626' }}>删除</button>
-              )}
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              {Object.entries(sc.params).map(([k, v]) => (
-                <div key={k}>
-                  <div className="text-[9px] font-mono" style={{ color: 'var(--text-muted)' }}>{k}</div>
-                  <input
-                    type="number"
-                    value={typeof v === 'number' ? v : 0}
-                    onChange={e => update(i, k, e.target.value)}
-                    step="any"
-                    className="w-full text-[11px] px-1.5 py-1 rounded outline-none border font-mono"
-                    style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <button onClick={add} className="text-xs px-3 py-1.5 rounded border" style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
-        + 添加场景
-      </button>
-    </div>
-  );
-}
-
-function CompareResultPanel({ results }: { results: { label: string; value: number; unit?: string; grade?: string; analysis?: string }[] }) {
-  const max = Math.max(...results.map(r => r.value || 0), 0);
-  return (
     <>
-      <div>
-        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>对比结果</div>
-        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{results.length} 个场景</h2>
-      </div>
-      <div className="space-y-2">
-        {results.map((r, i) => {
-          const pct = max > 0 ? (r.value / max) * 100 : 0;
-          const color = GRADE_COLOR[r.grade as string] ?? 'var(--text-secondary)';
-          return (
-            <div key={i} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{r.label}</span>
-                <span className="text-base font-mono font-bold" style={{ color }}>{r.value?.toFixed(2)} {r.unit}</span>
+      <Card title="场景对比（统一用 slopeFs）" icon={<GitCompare size={13} />} hint={`${scenarios.length} 个场景自动对比`}>
+        <div className="space-y-3">
+          {scenarios.map((sc, i) => (
+            <div key={i} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  value={sc.label}
+                  onChange={e => update(i, 'label', e.target.value)}
+                  className="text-sm font-semibold flex-1 px-2 py-1 rounded outline-none border"
+                  style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                />
+                <select
+                  onChange={e => setPreset(i, e.target.value as PresetName)}
+                  className="text-[10px] px-2 py-1 rounded border font-mono"
+                  style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                >
+                  <option value="conservative">保守</option>
+                  <option value="standard" selected>标准</option>
+                  <option value="aggressive">激进</option>
+                </select>
+                {scenarios.length > 2 && (
+                  <button onClick={() => remove(i)} className="text-[10px] px-1.5 py-1 rounded" style={{ color: '#dc2626' }}>删除</button>
+                )}
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+              <div className="grid grid-cols-5 gap-2">
+                {Object.entries(sc.params).map(([k, v]) => (
+                  <div key={k}>
+                    <div className="text-[9px] font-mono mb-0.5" style={{ color: 'var(--text-muted)' }}>{k}</div>
+                    <input
+                      type="number" value={typeof v === 'number' ? v : 0}
+                      onChange={e => update(i, k, e.target.value)} step="any"
+                      className="w-full text-[11px] px-1.5 py-1 rounded outline-none border font-mono"
+                      style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                    />
+                  </div>
+                ))}
               </div>
-              {r.analysis && <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{r.analysis}</p>}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+        <button onClick={add} className="text-xs px-3 py-1.5 rounded border mt-3" style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
+          + 添加场景
+        </button>
+      </Card>
+      {result && (
+        <Card title="对比结果" icon={<Sparkles size={13} />}>
+          <div className="space-y-2">
+            {result.map((r: any, i: number) => {
+              const max = Math.max(...result.map((x: any) => x.value || 0), 0);
+              const pct = max > 0 ? (r.value / max) * 100 : 0;
+              const color = GRADE_COLOR[r.grade as string] ?? 'var(--text-secondary)';
+              return (
+                <div key={i} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{r.label}</span>
+                    <span className="text-base font-mono font-bold" style={{ color }}>{r.value?.toFixed(2)} {r.unit}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </>
   );
 }
 
 // ============================================================
-// 蒙特卡洛模式
+// 蒙特卡洛（全宽视图）
 // ============================================================
-function MonteCarloMode({ params, setParams, preset, result }: {
+function MonteCarloFull({ params, setParams, preset, result }: {
   params: { param: string; std: number }[];
   setParams: (p: { param: string; std: number }[]) => void;
   preset: PresetName;
@@ -993,160 +893,71 @@ function MonteCarloMode({ params, setParams, preset, result }: {
   const add = () => setParams([...params, { param: 'beta', std: 1 }]);
   const remove = (i: number) => setParams(params.filter((_, idx) => idx !== i));
   const update = (i: number, field: 'param' | 'std', value: string) => {
-    setParams(params.map((p, idx) => {
-      if (idx !== i) return p;
-      if (field === 'param') return { ...p, param: value };
-      return { ...p, std: parseFloat(value) || 0 };
-    }));
+    setParams(params.map((p, idx) => idx === i ? { ...p, [field]: field === 'param' ? value : (parseFloat(value) || 0) } : p));
   };
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div>
-        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <Activity size={14} style={{ color: 'var(--primary)' }} /> 蒙特卡洛风险评估（slopeFs · Fs ≥ 1.30）
-        </h3>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          当前预设：<span style={{ color: PRESET_LABELS[preset].color }}>{PRESET_LABELS[preset].name}</span>。给输入参数加正态扰动，模拟 500 次，看 Fs 分布。
+    <>
+      <Card title="蒙特卡洛风险评估" icon={<Activity size={13} />} hint={`预设：${PRESET_LABELS[preset].name} · 阈值 Fs<1.30`}>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          给输入参数加正态扰动，模拟 500 次，看 Fs 分布与失败概率。
         </p>
-      </div>
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>扰动参数</div>
-        {params.map((p, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2">
-            <select
-              value={p.param}
-              onChange={e => update(i, 'param', e.target.value)}
-              className="text-xs px-2 py-1 rounded border font-mono"
-              style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-            >
-              {['H', 'beta', 'gamma', 'c', 'phi'].map(k => <option key={k} value={k}>{k}</option>)}
-            </select>
-            <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>σ =</span>
-            <input
-              type="number" value={p.std} step="any" min="0"
-              onChange={e => update(i, 'std', e.target.value)}
-              className="w-20 text-xs px-2 py-1 rounded outline-none border font-mono"
-              style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-            />
-            {params.length > 1 && (
-              <button onClick={() => remove(i)} className="text-[10px] px-1.5 py-1 rounded" style={{ color: '#dc2626' }}>×</button>
-            )}
-          </div>
-        ))}
-        <button onClick={add} className="text-[10px] px-2 py-1 rounded border mt-1" style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
+        <div className="space-y-2">
+          {params.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select value={p.param} onChange={e => update(i, 'param', e.target.value)}
+                      className="text-xs px-2 py-1 rounded border font-mono"
+                      style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
+                {['H', 'beta', 'gamma', 'c', 'phi'].map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>σ =</span>
+              <input type="number" value={p.std} step="any" min="0"
+                     onChange={e => update(i, 'std', e.target.value)}
+                     className="w-24 text-xs px-2 py-1 rounded outline-none border font-mono"
+                     style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
+              {params.length > 1 && (
+                <button onClick={() => remove(i)} className="text-[10px] px-1.5 py-1 rounded" style={{ color: '#dc2626' }}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button onClick={add} className="text-[10px] px-2 py-1 rounded border mt-2" style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
           + 添加扰动参数
         </button>
-      </div>
-    </div>
-  );
-}
-
-function MonteCarloResultPanel({ result, preset }: { result: any; preset: PresetName }) {
-  return (
-    <>
-      <div>
-        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>风险评估</div>
-        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Fs 分布（{result.iterations} 次）</h2>
-      </div>
-
-      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <HistogramChart
-          samples={result.samples}
-          bins={28}
-          threshold={{ value: 1.30, op: '<', color: '#dc2626' }}
-          height={200}
-        />
-      </div>
-
-      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div className="text-[10px] font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>关键统计</div>
-        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-          <div><span style={{ color: 'var(--text-muted)' }}>均值 μ</span> <span className="ml-1 font-bold" style={{ color: 'var(--text-primary)' }}>{result.mean.toFixed(2)}</span></div>
-          <div><span style={{ color: 'var(--text-muted)' }}>中位数 P50</span> <span className="ml-1 font-bold" style={{ color: 'var(--text-primary)' }}>{result.p50.toFixed(2)}</span></div>
-          <div><span style={{ color: 'var(--text-muted)' }}>P5</span> <span className="ml-1 font-bold" style={{ color: '#7c3aed' }}>{result.p5.toFixed(2)}</span></div>
-          <div><span style={{ color: 'var(--text-muted)' }}>P95</span> <span className="ml-1 font-bold" style={{ color: '#7c3aed' }}>{result.p95.toFixed(2)}</span></div>
-          <div><span style={{ color: 'var(--text-muted)' }}>最小</span> <span className="ml-1" style={{ color: 'var(--text-primary)' }}>{result.min.toFixed(2)}</span></div>
-          <div><span style={{ color: 'var(--text-muted)' }}>最大</span> <span className="ml-1" style={{ color: 'var(--text-primary)' }}>{result.max.toFixed(2)}</span></div>
-        </div>
-        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>
-            失败概率 P(Fs &lt; 1.30)
+      </Card>
+      {result && (
+        <Card title={`Fs 分布（${result.iterations} 次）`} icon={<Sparkles size={13} />}>
+          <HistogramChart samples={result.samples} bins={28} threshold={{ value: 1.30, op: '<', color: '#dc2626' }} height={200} />
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>失败概率 P(Fs &lt; 1.30)</div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold font-mono" style={{ color: result.failProb > 0.1 ? '#dc2626' : result.failProb > 0.01 ? '#ea580c' : '#16a34a' }}>
+                {(result.failProb * 100).toFixed(1)}%
+              </span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                {result.failProb > 0.1 ? '⚠ 高风险，建议加固' : result.failProb > 0.01 ? '注意' : '✓ 满足规范'}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-2 text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+              <div>μ {result.mean.toFixed(2)}</div>
+              <div>P5 {result.p5.toFixed(2)}</div>
+              <div>P50 {result.p50.toFixed(2)}</div>
+              <div>P95 {result.p95.toFixed(2)}</div>
+            </div>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold font-mono" style={{ color: result.failProb > 0.1 ? '#dc2626' : result.failProb > 0.01 ? '#ea580c' : '#16a34a' }}>
-              {(result.failProb * 100).toFixed(1)}%
-            </span>
-            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              {result.failProb > 0.1 ? '⚠ 高风险，建议加固' : result.failProb > 0.01 ? '注意' : '✓ 满足规范'}
-            </span>
-          </div>
-        </div>
-      </div>
+        </Card>
+      )}
     </>
   );
 }
 
 // ============================================================
-// 成本估算模式
+// 成本估算（全宽视图）
 // ============================================================
-function CostMode({ inputs, setInputs, result }: {
+function CostFull({ inputs, setInputs, result }: {
   inputs: { capacityM3: number; leachateM3PerYear: number; monitorWells: number };
   setInputs: (i: { capacityM3: number; leachateM3PerYear: number; monitorWells: number }) => void;
   result: { labor: number; energy: number; chemical: number; monitor: number; total: number };
 }) {
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <div>
-        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <TrendingUp size={14} style={{ color: 'var(--primary)' }} /> 运营成本估算（万元/年）
-        </h3>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          简单经验模型：人工 / 能耗 / 药剂 / 检测 4 大类。输入库容、年渗滤液量、监测井数。
-        </p>
-      </div>
-      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div>
-          <label className="flex items-center justify-between mb-1">
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>总库容</span>
-            <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>m³</span>
-          </label>
-          <input
-            type="number" value={inputs.capacityM3} min="0" step="any"
-            onChange={e => setInputs({ ...inputs, capacityM3: parseFloat(e.target.value) || 0 })}
-            className="w-full text-sm px-2 py-1.5 rounded outline-none border font-mono"
-            style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-          />
-        </div>
-        <div>
-          <label className="flex items-center justify-between mb-1">
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>年渗滤液产生量</span>
-            <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>m³/a</span>
-          </label>
-          <input
-            type="number" value={inputs.leachateM3PerYear} min="0" step="any"
-            onChange={e => setInputs({ ...inputs, leachateM3PerYear: parseFloat(e.target.value) || 0 })}
-            className="w-full text-sm px-2 py-1.5 rounded outline-none border font-mono"
-            style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-          />
-        </div>
-        <div>
-          <label className="flex items-center justify-between mb-1">
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>监测井数量</span>
-            <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>口</span>
-          </label>
-          <input
-            type="number" value={inputs.monitorWells} min="0" step="1"
-            onChange={e => setInputs({ ...inputs, monitorWells: parseInt(e.target.value) || 0 })}
-            className="w-full text-sm px-2 py-1.5 rounded outline-none border font-mono"
-            style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CostResultPanel({ result, inputs }: { result: { labor: number; energy: number; chemical: number; monitor: number; total: number }; inputs: any }) {
   const max = Math.max(result.labor, result.energy, result.chemical, result.monitor, 1);
   const items = [
     { label: '人工', value: result.labor, color: '#0ea5b7' },
@@ -1155,35 +966,48 @@ function CostResultPanel({ result, inputs }: { result: { labor: number; energy: 
     { label: '检测', value: result.monitor, color: '#ea580c' },
   ];
   return (
-    <>
-      <div>
-        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>年度运营</div>
-        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>总成本</h2>
+    <Card title="运营成本估算（万元/年）" icon={<TrendingUp size={13} />}>
+      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+        简单经验模型：人工 / 能耗 / 药剂 / 检测 4 大类。输入库容、年渗滤液量、监测井数。
+      </p>
+      <div className="space-y-3 mb-4">
+        <CostField label="总库容" unit="m³" value={inputs.capacityM3} onChange={v => setInputs({ ...inputs, capacityM3: v })} />
+        <CostField label="年渗滤液产生量" unit="m³/a" value={inputs.leachateM3PerYear} onChange={v => setInputs({ ...inputs, leachateM3PerYear: v })} />
+        <CostField label="监测井数量" unit="口" value={inputs.monitorWells} step="1" onChange={v => setInputs({ ...inputs, monitorWells: v })} />
       </div>
-      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div className="text-4xl font-bold font-mono" style={{ color: 'var(--primary)' }}>
-          {result.total.toFixed(1)} <span className="text-base font-normal" style={{ color: 'var(--text-muted)' }}>万元/年</span>
-        </div>
-        <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-          库容 {(inputs.capacityM3 / 10000).toFixed(1)} 万 m³ · 渗滤液 {(inputs.leachateM3PerYear / 10000).toFixed(2)} 万 m³/a
+      <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
+        <div className="text-3xl font-bold font-mono" style={{ color: 'var(--primary)' }}>
+          {result.total.toFixed(1)} <span className="text-sm font-normal" style={{ color: 'var(--text-muted)' }}>万元/年</span>
         </div>
       </div>
-      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-        <div className="text-[10px] font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>分项占比</div>
-        <div className="space-y-2">
-          {items.map(it => (
-            <div key={it.label}>
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span style={{ color: 'var(--text-secondary)' }}>{it.label}</span>
-                <span className="font-mono font-semibold" style={{ color: it.color }}>{it.value.toFixed(1)} 万 ({((it.value / result.total) * 100).toFixed(0)}%)</span>
-              </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                <div className="h-full rounded-full" style={{ width: `${(it.value / max) * 100}%`, backgroundColor: it.color }} />
-              </div>
+      <div className="mt-3 space-y-2">
+        {items.map(it => (
+          <div key={it.label}>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span style={{ color: 'var(--text-secondary)' }}>{it.label}</span>
+              <span className="font-mono font-semibold" style={{ color: it.color }}>{it.value.toFixed(1)} 万 ({((it.value / result.total) * 100).toFixed(0)}%)</span>
             </div>
-          ))}
-        </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
+              <div className="h-full rounded-full" style={{ width: `${(it.value / max) * 100}%`, backgroundColor: it.color }} />
+            </div>
+          </div>
+        ))}
       </div>
-    </>
+    </Card>
+  );
+}
+
+function CostField({ label, unit, value, onChange, step }: { label: string; unit: string; value: number; onChange: (v: number) => void; step?: string }) {
+  return (
+    <div>
+      <label className="flex items-center justify-between mb-1">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{unit}</span>
+      </label>
+      <input type="number" value={value} step={step || "any"} min="0"
+             onChange={e => onChange(parseFloat(e.target.value) || 0)}
+             className="w-full text-sm px-3 py-1.5 rounded outline-none border font-mono"
+             style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
+    </div>
   );
 }
