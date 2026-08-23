@@ -41,7 +41,7 @@ function verdictFor(Fs: number): string {
 export function SafetyFactorGauge({
   Fs,
   className = '',
-  size = 200,
+  size = 180,
   thresholds = [1.0, 1.3, 1.5],
   min = 0.5,
   max = 2.5,
@@ -93,7 +93,7 @@ export function SafetyFactorGauge({
 
   return (
     <div className={`flex flex-col items-center gap-1 ${className}`} style={{ width: size }}>
-      <svg width={size} height={size * 0.72} viewBox={`0 0 ${size} ${size * 0.72}`} className="overflow-visible">
+      <svg width={size} height={size * 0.72} viewBox={`0 0 ${size} ${size * 0.72}`} className="block">
         <defs>
           <linearGradient id="gauge-bg" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor={COLOR_RED} stopOpacity="0.15" />

@@ -819,8 +819,8 @@ function SingleResultPanel(props: {
       {/* 主结果：Fs 专用仪表 / 其他用 ResultInterpretation */}
       {isFs && FsValue !== null ? (
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
-          <div className="flex items-center justify-center py-4">
-            <SafetyFactorGauge Fs={FsValue} size={220} />
+          <div className="flex items-center justify-center py-3">
+            <SafetyFactorGauge Fs={FsValue} size={200} />
           </div>
           {result.ref && (
             <div className="px-3 py-2 border-t text-[10px] font-mono" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
