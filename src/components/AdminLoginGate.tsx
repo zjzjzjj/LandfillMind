@@ -62,7 +62,7 @@ export function AdminLoginGate({ onAuthenticated }: Props) {
         if (d.enabled) setAuthHint('已启用 ADMIN_TOKEN 环境变量');
         else setAuthHint(d.hint ?? '请联系系统管理员');
         })
-      .catch(()(() => setAuthHint('无法连接服务器'));
+      .catch(() => setAuthHint('无法连接服务器'));
   }, []);
 
   // 自动尝试用 sessionStorage 中的 token 验证
