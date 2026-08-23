@@ -526,7 +526,7 @@ export default function DesignPage() {
 
         {/* 内容 */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-6 pb-24 space-y-5">
+          <div className="max-w-5xl mx-auto px-6 py-6 pb-24 space-y-5">
             {selected === COMPARE_ID ? (
               <CompareModeFull scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} />
             ) : selected === MONTE_ID ? (
