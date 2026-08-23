@@ -446,10 +446,14 @@ async function handleCodeBuddyChat(req: express.Request, res: express.Response) 
     // SDK 不可用，降级到 OpenAI 兼容接口
     const cfg = resolveCompat();
     if (cfg) {
+      console.warn('[chat] CodeBuddy SDK 失败，降级到 compat:', err?.message);
       await handleCompatChat(req, res, cfg);
       return;
     }
-    res.write(`data: ${JSON.stringify({ type: 'error', message: err?.message ?? 'AI 服务暂不可用' })}\n\n`);
+    // 没有 compat 通道可降级：给前端友好错误
+    const msg = `CodeBuddy SDK 启动失败（${err?.message ?? '未知错误'}）。请在服务器 .env 设置 OPENAI_API_KEY（智谱 GLM 免费）或 OPENROUTER_API_KEY。`;
+    console.error('[chat]', msg);
+    res.write(`data: ${JSON.stringify({ type: 'error', message: msg, needConfig: true })}\n\n`);
   } finally {
     // 降级路径已由 handleCompatChat 收尾，这里只在尚未结束时补 [DONE]
     if (!res.writableEnded) {
@@ -460,22 +464,26 @@ async function handleCodeBuddyChat(req: express.Request, res: express.Response) 
 }
 
 // ============ POST /api/chat ============
+// 分发逻辑（v4.3 修复）：
+//   1. 优先 OpenAI 兼容通道（GLM/OpenRouter/CodeBuddy-OpenAI-mode）—— 最稳定
+//   2. 仅当显式设置了 CODEBUDDY_API_KEY 且无 compat 通道时，走原 CodeBuddy SDK
+//   3. 都没有：返回 503 友好提示，**不再**自动尝试 spawn SDK（避免 CLI 错误）
 app.post('/api/chat', async (req, res) => {
-  try {
-    const cfg = resolveCompat();
-    if (!process.env.CODEBUDDY_API_KEY && cfg) {
-      await handleCompatChat(req, res, cfg);
-    } else {
-      await handleCodeBuddyChat(req, res);
-    }
-  } catch (err: any) {
-    if (!res.headersSent) {
-      res.status(500).json({ error: err?.message ?? '服务器错误' });
-    } else {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: err?.message ?? '服务器错误' })}\n\n`);
-      res.end();
-    }
+  const cfg = resolveCompat();
+  if (cfg) {
+    // 通道链：所选模型所在通道 → 备用通道（GLM ↔ OpenRouter）
+    return await handleCompatChat(req, res, cfg);
   }
+  if (process.env.CODEBUDDY_API_KEY) {
+    // 用户显式要求走 CodeBuddy
+    return await handleCodeBuddyChat(req, res);
+  }
+  // 无任何通道：直接给前端友好错误，**不再**走 SDK
+  console.error('[chat] 无可用 LLM 通道：OPENAI_API_KEY / OPENROUTER_API_KEY / CODEBUDDY_API_KEY 均未配置');
+  res.status(503).json({
+    error: '后端未配置任何 LLM 通道。请在服务器 .env 里设置 OPENAI_API_KEY（智谱 GLM，免费）或 OPENROUTER_API_KEY 后重启 dev server。',
+    needConfig: true,
+  });
 });
 
 // ============ 会话管理 ============
