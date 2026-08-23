@@ -10,6 +10,9 @@ server-dev.log
 vite.config.js
 vite.config.d.ts
 ui-test-report.json
+.doc
+.pdf
+.docx
 
 # Debug 截图与探针脚本
 .debug/
