@@ -187,6 +187,13 @@ export function buildCalcMarkdown(calcName: string, calcRef: string, params: Rec
     L.push(`- 结果值：${val} ${result.unit ?? ''}`.trim());
   }
   L.push(`- 风险评级：${result.grade}`);
+  // v4.5：渲染 extra 中间变量表格
+  if (result.extra && Object.keys(result.extra).length > 0) {
+    L.push('\n## 中间变量 / 分解');
+    L.push('| 变量 | 数值 |');
+    L.push('| --- | --- |');
+    Object.entries(result.extra).forEach(([k, v]) => L.push(`| ${k} | ${v} |`));
+  }
   if (result.formula) L.push(`\n## 计算公式\n${result.formula}`);
   if (result.analysis) L.push(`\n## 分析说明\n${result.analysis}`);
   L.push(`\n## 规范依据\n${result.ref ?? calcRef}`);

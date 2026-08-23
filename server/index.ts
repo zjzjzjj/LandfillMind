@@ -586,92 +586,100 @@ function num(v: any, def?: number): number {
 }
 
 const CALC_REGISTRY: Record<string, (params: any) => any> = {
-  slopeFs: (p) => {
-    const rad = Math.PI / 180;
-    const alpha = Math.atan(1 / (p.beta ?? 3)) / 2;
-    const H = p.H ?? 30;
-    const gamma = p.gamma ?? 10;
-    const c = p.c ?? 5;
-    const phi = (p.phi ?? 25) * rad;
-    const beta = p.beta ?? 3;
-    const W = 0.5 * gamma * H * H * (1 + 1 / beta);
-    const Ls = W / (gamma * Math.cos(alpha) * H / 2);
-    const Fs = (c * Ls + W * Math.cos(alpha) * Math.cos(alpha) * Math.tan(phi)) / (W * Math.sin(alpha) * Math.cos(alpha));
-    const okRun = Fs >= 1.30;
-    return {
-      ok: okRun,
-      value: Math.round(Fs * 100) / 100,
-      grade: okRun ? 'green' : 'red',
-      analysis: `H=${H}m, 1:β=1:${beta}, γ=${gamma}kN/m³, c=${c}kPa, φ=${p.phi ?? 25}°；Fs=${Fs.toFixed(2)}；运行要求≥1.30 → ${okRun ? '满足' : '不满足'}。`,
-      ref: 'CJJ 176-2012 §4.5 / GB 50330-2013',
-    };
+  // v4.5 全部走 calculate.ts 的新函数，extra 字段透传
+  slopeFs: (p: any) => {
+    const r = calc.slopeFs(
+      num(p.H, 30), num(p.beta, 3), num(p.gamma, 10), num(p.c, 5), num(p.phi, 25),
+      num(p.waterTableDepth, 10), num(p.seismicCoeff, 0), num(p.surcharge, 0),
+    );
+    return { ...r };
   },
-  capacity: (p) => {
-    const A = p.A ?? 10, H = p.H ?? 30, rho = p.rho ?? 10, Qd = p.Qd ?? 500;
-    const V = A * H * 10000;
-    const years = Math.round(V / (Qd * 365));
-    return {
-      ok: true, value: years, unit: '年',
-      grade: 'green',
-      analysis: `A=${A}ha, H=${H}m, ρ=${rho}kN/m³, 日填入量=${Qd}m³/d；总库容 V=${V}m³；估算使用年限≈${years}年。`,
-      ref: 'CJJ 176-2012 §3.3',
-    };
+  capacity: (p: any) => {
+    const r = calc.capacity(
+      num(p.A, 10), num(p.H, 30), num(p.rho, 10), num(p.Qd, 500),
+      Math.max(1, num(p.phases, 1)), num(p.coverRatio, 0), num(p.sFactor, 1),
+    );
+    return { ...r };
   },
-  hdpeCheck: (p) => calc.hdpeCheck(num(p.D, 1.5), num(p.sigma, 27), num(p.eps, 700), p.P ?? 0.2, p.hold ?? 5),
-  wellR: (p) => {
-    const Q = p.Q ?? 100, t = p.t ?? 30, ne = p.ne ?? 0.3, dh = p.dh ?? 2;
-    const R = Math.sqrt(Q * t / (Math.PI * ne * dh));
-    return {
-      ok: true, value: Math.round(R * 10) / 10, unit: 'm',
-      grade: 'green',
-      analysis: `Q=${Q}m³/d, t=${t}d, ne=${ne}, Δh=${dh}m；影响半径 R≈${R.toFixed(1)}m。`,
-      ref: 'HJ 25.6-2019',
-    };
+  settlementHyper: (p: any) => {
+    const r = calc.settlementHyper(num(p.t1, 30), num(p.s1, 50), num(p.t2, 180), num(p.s2, 200));
+    return { ...r };
   },
-  // 透传 calculate.ts 中已实现的计算器（按命名参数正确解构，避免把整个 params 对象当成位置参数传入）
-  ...Object.fromEntries(
-    [
-      ['injectR', (p: any) => calc.injectR(p.Pinj, p.t, num(p.mu, 1.0), num(p.k, 1.0))],
-      ['leachateCalc', (p: any) => calc.calculateLeachate(num(p.area) * 10000, num(p.rainfall), num(p.runoffCoeff, 0.3), num(p.wasteHeight, 0))],
-      ['lfgYield', (p: any) => calc.lfgYield(num(p.M), num(p.k), num(p.year), num(p.Lo, 170))],
-      ['advect', (p: any) => calc.advect(num(p.C0), num(p.v), num(p.x), num(p.D))],
-      ['soilScreen', (p: any) => calc.soilScreen(p.pol, p.cls)],
-      ['decayCalc', (p: any) => calc.decayCalc(num(p.C0), num(p.Ctarget), num(p.t12, 1000))],
-      ['linerKeq', (p: any) => calc.linerKeq(num(p.d1), num(p.k1), num(p.d2), num(p.k2), num(p.theta, 0))],
-      ['settlementHyper', (p: any) => calc.settlementHyper(num(p.t1), num(p.s1), num(p.t2), num(p.s2))],
-    ] as [string, (p: any) => any][]
-  ),
-  // ===== v4.3 新挂载的 3 个 calculate.ts 已实现但之前未暴露的计算器 =====
-  //   注：这些函数的签名与 PARAMS_MAP 字段不完全对应，已做最简映射
   optimizeWellSpacing: (p: any) => {
-    // optimizeWellSpacing(effectiveRadius, pattern) — 只用 effectiveRadius
-    const r = calc.optimizeWellSpacing(num(p.effectiveRadius, num(p.H, 30)), 'hexagonal');
-    return {
-      ok: true, value: r.spacing, unit: 'm', grade: 'blue',
-      analysis: `${r.analysis} 布井密度：${r.wellsPerArea.toFixed(1)} 口/万㎡`,
-      ref: 'CJJ 176 §5.2',
-    };
+    const r = calc.optimizeWellSpacing(
+      num(p.effectiveRadius, num(p.H, 30)),
+      p.pattern ?? 'hexagonal',
+      num(p.drawdown, 5),
+      num(p.interferenceFactor, 0.4),
+    );
+    return { ...r };
+  },
+  leachateCalc: (p: any) => {
+    // area 仍按"万㎡"输入，内部 ×10000 → m²
+    const r = calc.calculateLeachate(
+      num(p.area) * 10000, num(p.rainfall, 1200),
+      num(p.runoffCoeff, 0.3), num(p.wasteHeight, 0),
+      num(p.ET, 800), num(p.cloggingFactor, 0), num(p.recirculationRatio, 0),
+    );
+    return { ...r };
   },
   moisturePredict: (p: any) => {
-    // predictMoisture(initialMoisture, injectionPressure, days, depth)
     const r = calc.predictMoisture(
-      num(p.initialMoisture, 60),
-      num(p.injectionPressure, 15),
-      num(p.days, 7),
-      num(p.depth, 5),
+      num(p.initialMoisture, 60), num(p.injectionPressure, 15), num(p.days, 7), num(p.depth, 5),
+      num(p.gasFlow, 50), num(p.screenLength, 3), num(p.wellheadLoss, 1),
     );
-    return {
-      ok: r.targetAchieved, value: r.predictedMoisture, unit: '%', grade: r.targetAchieved ? 'green' : 'yellow',
-      analysis: r.analysis, ref: 'CJJ 176 §5.3',
-    };
+    return { ...r };
   },
-  extractionPressure: (p: any) => {
-    // calculateExtractionPressure(injectionPressure)
-    const r = calc.calculateExtractionPressure(num(p.injectionPressure, num(p.Q, 15)));
-    return {
-      ok: true, value: r.extraction, unit: 'kPa', grade: 'blue',
-      analysis: r.analysis, ref: 'USEPA LFG Energy',
-    };
+  lfgYield: (p: any) => {
+    const r = calc.lfgYield(
+      num(p.M, 500), num(p.k, 0.1), num(p.year, 10), num(p.Lo, 170),
+      num(p.utilizationFactor, 0.5), num(p.flareEfficiency, 0.9),
+    );
+    return { ...r };
+  },
+  hdpeCheck: (p: any) => {
+    const r = calc.hdpeCheck(
+      num(p.D, 1.5), num(p.sigma, 27), num(p.eps, 700),
+      num(p.P, 0.2), num(p.hold, 5),
+      num(p.carbonBlack, 2.5), num(p.punctureResistance, 480), num(p.oxidInductionTime, 100),
+    );
+    return { ...r };
+  },
+  linerKeq: (p: any) => {
+    const r = calc.linerKeq(
+      num(p.d1, 1.5), num(p.k1, 0.0000001), num(p.d2, 6), num(p.k2, 0.000000001), num(p.theta, 0.1),
+      num(p.seamLength, 50), num(p.chemicalCompatibility, 1),
+    );
+    return { ...r };
+  },
+  wellR: (p: any) => {
+    const r = calc.wellR(
+      num(p.Q, 100), num(p.t, 30), num(p.ne, 0.3), num(p.dh, 2),
+      p.aquiferType ?? 'unconfined', num(p.thickness, 20),
+    );
+    return { ...r };
+  },
+  injectR: (p: any) => {
+    const r = calc.injectR(
+      num(p.Pinj, 4), num(p.t, 24), num(p.mu, 1.0), num(p.k, 1.0),
+      num(p.porosity, 0.3), num(p.gasViscosity, 0.018), num(p.formationCompressibility, 1e-6),
+    );
+    return { ...r };
+  },
+  advect: (p: any) => {
+    const r = calc.advect(
+      num(p.C0, 100), num(p.v, 0.1), num(p.x, 50), num(p.D, 10),
+      num(p.retardationFactor, 1), num(p.decayRate, 0),
+    );
+    return { ...r };
+  },
+  soilScreen: (p: any) => {
+    const r = calc.soilScreen(p.pol ?? '砷', p.cls ?? '一类(居住/学校)', p.depthLayer ?? '0.5-1.5');
+    return { ...r };
+  },
+  decayCalc: (p: any) => {
+    const r = calc.decayCalc(num(p.C0, 500), num(p.Ctarget, 50), num(p.t12, 1000), num(p.monitoringCostPerYear, 8));
+    return { ...r };
   },
 };
 
@@ -689,9 +697,9 @@ const CALC_FORMULAS: Record<string, string> = {
   decayCalc: 'T = ln(C0/Ct) / λ；λ = ln2 / t½（HJ 25.6-2019）',
   linerKeq: 'k_eq = d_total² / (d₂²/k₂ + d₁·d₂·θ/k₁)；k_eq ≤ 1×10⁻⁹ cm/s（GB 16889-2008 §5.1）',
   settlementHyper: 's(t) = s∞·t / (a + t)（CJJ 176-2012 §4.6，双曲线法）',
-  optimizeWellSpacing: 'D ≈ 1.5·√(k·H·t / nₑ)（井间干扰最优化，CJJ 176-2012 §5.2）',
+  optimizeWellSpacing: 'D = √3·R（梅花形）或 2R（方形），井群叠加降深 = 单井 × (1+interference)',
   moisturePredict: 'ΔS = inflow − et − runoff；储水量上限 = storageMax（CJJ 176-2012 §5.3）',
-  extractionPressure: 'ΔP = Q·μ·ln(R/r) / (2π·k·L)（USEPA LFG 抽气井设计）',
+  // v4.5 移除 extractionPressure（占位实现 + 字段脱钩）
 };
 
 // 单计算器路由放在最后（避免抢匹配 /api/calc/sensitivity 等保留路由）

@@ -73,12 +73,14 @@ export interface Agent {
 
 export interface CalcResult {
   ok: boolean;
-  value?: number;
+  value?: number | string;
   unit?: string;
   grade: 'red' | 'orange' | 'yellow' | 'blue' | 'green';
   analysis: string;
   ref?: string;
   formula?: string;
+  /** v4.5 新增：函数返回的中间变量 / 分解数据，前端 ResultExtras 展示 */
+  extra?: Record<string, number | string>;
   [key: string]: unknown;
 }
 
