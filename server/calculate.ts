@@ -568,3 +568,72 @@ export default {
   injectR,
   lfgYield,
 };
+
+// ============================================================
+// v4.3 新增：敏感性分析 + 蒙特卡洛风险评估（Design Center 用）
+// ============================================================
+
+/**
+ * 一维敏感性分析
+ * 固定其他参数，沿 varyParam 在 [lo, hi] 区间取 n 个点，调用指定计算器，返回结果序列。
+ *
+ * - 用于前端画 Fs vs H、leachate vs 降雨量 等曲线
+ * - 若不传 range，默认在 baseParams[varyParam] ± 50% 范围（且 ≥ 0）
+ * - 计算器名与 CALC_REGISTRY 对齐（index.ts 中注册的 key）
+ */
+export function sensitivity1D(
+  calcName: string,
+  baseParams: Record<string, number>,
+  varyParam: string,
+  n: number = 20,
+  range?: [number, number]
+): { xs: number[]; ys: number[]; baseValue: number; baseX: number; param: string; unit?: string } {
+  // 占位实现：等待 index.ts 注入真正的 CALC_REGISTRY；这里只导出契约。
+  // 实际执行在 server/index.ts 的路由里完成（避免循环依赖）。
+  return { xs: [], ys: [], baseValue: 0, baseX: 0, param: varyParam, unit: undefined };
+}
+
+/**
+ * 蒙特卡洛风险评估（v4.3 新增）
+ * 参数加正态扰动，统计结果分布。
+ *
+ * - paramDist: { paramName: { mean, std } } 哪些参数加扰动（用 N(mean, std²) 抽样）
+ * - threshold: 失败条件（如 {op: '<', value: 1.30} 表示 Fs<1.30 判失败）
+ * - iterations: 抽样次数（默认 500，0 维边界走 100）
+ *
+ * 返回：samples 全样本 + 统计量 + 失败概率。
+ * 占位实现：实际执行在 index.ts 路由里完成（需要 CALC_REGISTRY）。
+ */
+export function monteCarloRisk(
+  calcName: string,
+  baseParams: Record<string, number>,
+  paramDist: Record<string, { mean: number; std: number }>,
+  threshold: { op: '<' | '<=' | '>' | '>='; value: number },
+  iterations: number = 500
+): {
+  samples: number[];
+  mean: number;
+  p5: number;
+  p50: number;
+  p95: number;
+  min: number;
+  max: number;
+  failProb: number;
+  threshold: number;
+  iterations: number;
+} {
+  return {
+    samples: [], mean: 0, p5: 0, p50: 0, p95: 0, min: 0, max: 0,
+    failProb: 0, threshold: threshold.value, iterations: 0,
+  };
+}
+
+/**
+ * Box-Muller 标准正态采样（用于蒙特卡洛）
+ */
+export function gaussian(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}

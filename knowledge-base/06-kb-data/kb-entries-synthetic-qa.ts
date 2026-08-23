@@ -11,7 +11,7 @@
  * 兼容字段：{ key, module, kw[], q, pro, easy, cite, clause, related[], calc? }
  */
 
-import type { KBEntry } from '../../server/kb';
+import type { KBEntry } from '@server/kb';
 
 /**
  * 模块说明

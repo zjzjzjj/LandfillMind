@@ -10,7 +10,7 @@
  *   - 特殊场地类型（平原/滩涂/岩溶）
  */
 
-import type { KBEntry } from '../../../server/kb';
+import type { KBEntry } from '@server/kb';
 
 export const EXPANDED_KB_BATCH3: KBEntry[] = [
   // ============== 高级分析（advanced analytics · m6）==============

@@ -18,6 +18,7 @@ import { AGENT_TOOL_USAGE } from './prompts.js';
 import { extractSceneParams, getCachedAgentRun, agentCache, warmAgentCache } from './multiagent.js';
 import type { MASceneParams } from './multiagent.js';
 import { resolveCompat, resolveCfgForModel, resolveOpenRouter, resolveGlm, detailMaxTokens, detailPromptSuffix } from './llm.js';
+import { gaussian } from './calculate.js';
 
 import { initRetrieval } from './retrieval.js';
 import { buildChatAugmentation, summarizeConversation, detectCalcIntent } from './augment.js';
@@ -632,6 +633,38 @@ const CALC_REGISTRY: Record<string, (params: any) => any> = {
       ['settlementHyper', (p: any) => calc.settlementHyper(num(p.t1), num(p.s1), num(p.t2), num(p.s2))],
     ] as [string, (p: any) => any][]
   ),
+  // ===== v4.3 新挂载的 3 个 calculate.ts 已实现但之前未暴露的计算器 =====
+  //   注：这些函数的签名与 PARAMS_MAP 字段不完全对应，已做最简映射
+  optimizeWellSpacing: (p: any) => {
+    // optimizeWellSpacing(effectiveRadius, pattern) — 只用 effectiveRadius
+    const r = calc.optimizeWellSpacing(num(p.effectiveRadius, num(p.H, 30)), 'hexagonal');
+    return {
+      ok: true, value: r.spacing, unit: 'm', grade: 'blue',
+      analysis: `${r.analysis} 布井密度：${r.wellsPerArea.toFixed(1)} 口/万㎡`,
+      ref: 'CJJ 176 §5.2',
+    };
+  },
+  moisturePredict: (p: any) => {
+    // predictMoisture(initialMoisture, injectionPressure, days, depth)
+    const r = calc.predictMoisture(
+      num(p.initialMoisture, 60),
+      num(p.injectionPressure, 15),
+      num(p.days, 7),
+      num(p.depth, 5),
+    );
+    return {
+      ok: r.targetAchieved, value: r.predictedMoisture, unit: '%', grade: r.targetAchieved ? 'green' : 'yellow',
+      analysis: r.analysis, ref: 'CJJ 176 §5.3',
+    };
+  },
+  extractionPressure: (p: any) => {
+    // calculateExtractionPressure(injectionPressure)
+    const r = calc.calculateExtractionPressure(num(p.injectionPressure, num(p.Q, 15)));
+    return {
+      ok: true, value: r.extraction, unit: 'kPa', grade: 'blue',
+      analysis: r.analysis, ref: 'USEPA LFG Energy',
+    };
+  },
 };
 
 // 各计算器的规范公式（用于计算书"计算公式"章节，公式按规范/经验式给出）
@@ -648,10 +681,170 @@ const CALC_FORMULAS: Record<string, string> = {
   decayCalc: 'T = ln(C0/Ct) / λ；λ = ln2 / t½（HJ 25.6-2019）',
   linerKeq: 'k_eq = d_total² / (d₂²/k₂ + d₁·d₂·θ/k₁)；k_eq ≤ 1×10⁻⁹ cm/s（GB 16889-2008 §5.1）',
   settlementHyper: 's(t) = s∞·t / (a + t)（CJJ 176-2012 §4.6，双曲线法）',
+  optimizeWellSpacing: 'D ≈ 1.5·√(k·H·t / nₑ)（井间干扰最优化，CJJ 176-2012 §5.2）',
+  moisturePredict: 'ΔS = inflow − et − runoff；储水量上限 = storageMax（CJJ 176-2012 §5.3）',
+  extractionPressure: 'ΔP = Q·μ·ln(R/r) / (2π·k·L)（USEPA LFG 抽气井设计）',
 };
 
+// 单计算器路由放在最后（避免抢匹配 /api/calc/sensitivity 等保留路由）
+// 见下：app.post('/api/calc/:name', ...)
+
+app.get('/api/calc', (_req, res) => {
+  res.json({ count: Object.keys(CALC_REGISTRY).length, names: Object.keys(CALC_REGISTRY) });
+});
+
+// ============ v4.3 新增：敏感性分析 ============
+// POST /api/calc/sensitivity
+//   body: { name, params, varyParam, n?, range? }
+//   → { xs, ys, baseValue, baseX, param, unit }
+app.post('/api/calc/sensitivity', (req, res) => {
+  const { name, params = {}, varyParam, n = 20, range } = req.body ?? {};
+  if (!name || !CALC_REGISTRY[name]) {
+    return res.status(400).json({ error: `未知计算器: ${name}`, available: Object.keys(CALC_REGISTRY) });
+  }
+  if (!varyParam) {
+    return res.status(400).json({ error: '缺少 varyParam' });
+  }
+  const fn = CALC_REGISTRY[name];
+  const baseX = num(params[varyParam], 1);
+  let lo: number, hi: number;
+  if (Array.isArray(range) && range.length === 2 && Number.isFinite(range[0]) && Number.isFinite(range[1])) {
+    [lo, hi] = range;
+  } else {
+    // 默认 baseX ± 50%，且下界 ≥ 0
+    const half = Math.max(Math.abs(baseX) * 0.5, 1);
+    lo = Math.max(0, baseX - half);
+    hi = baseX + half;
+  }
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const steps = Math.max(2, Math.min(50, Math.floor(n)));
+  for (let i = 0; i < steps; i++) {
+    const x = lo + (hi - lo) * (i / (steps - 1));
+    xs.push(x);
+    const testParams: any = { ...params, [varyParam]: x };
+    try {
+      const r = fn(testParams);
+      const y = typeof r?.value === 'number' ? r.value : NaN;
+      ys.push(y);
+    } catch {
+      ys.push(NaN);
+    }
+  }
+  // 基准值（用原参数跑一次）
+  let baseValue: number = NaN;
+  try {
+    const r0 = fn(params);
+    baseValue = typeof r0?.value === 'number' ? r0.value : NaN;
+  } catch { /* 保持 NaN */ }
+  res.json({ xs, ys, baseValue, baseX, param: varyParam });
+});
+
+// ============ v4.3 新增：蒙特卡洛风险评估 ============
+// POST /api/calc/montecarlo
+//   body: { name, params, paramDist, threshold, iterations? }
+//   → { samples, mean, p5, p50, p95, min, max, failProb, threshold, iterations }
+app.post('/api/calc/montecarlo', (req, res) => {
+  const {
+    name, params = {},
+    paramDist = {},
+    threshold = { op: '<', value: 1.3 },
+    iterations = 500,
+  } = req.body ?? {};
+  if (!name || !CALC_REGISTRY[name]) {
+    return res.status(400).json({ error: `未知计算器: ${name}`, available: Object.keys(CALC_REGISTRY) });
+  }
+  if (!threshold || typeof threshold.value !== 'number' || !['<', '<=', '>', '>='].includes(threshold.op)) {
+    return res.status(400).json({ error: 'threshold 必须是 {op, value} 且 op ∈ {<, <=, >, >=' });
+  }
+  const fn = CALC_REGISTRY[name];
+  const N = Math.max(50, Math.min(2000, Math.floor(iterations)));
+  const samples: number[] = [];
+  let failCount = 0;
+  // 对每个 paramDist 的 key，生成扰动后的参数
+  const distKeys = Object.keys(paramDist);
+  for (let i = 0; i < N; i++) {
+    const sampleParams: any = { ...params };
+    for (const k of distKeys) {
+      const { mean, std } = paramDist[k] ?? {};
+      if (typeof mean === 'number' && typeof std === 'number' && std > 0) {
+        const base = num(params[k], mean);
+        const perturbed = base + gaussian() * std;
+        sampleParams[k] = Math.max(0, perturbed); // 物理量非负
+      }
+    }
+    try {
+      const r = fn(sampleParams);
+      const v = typeof r?.value === 'number' ? r.value : null;
+      if (v !== null) {
+        samples.push(v);
+        // 阈值判定
+        const op = threshold.op;
+        const tv = threshold.value;
+        if ((op === '<' && v < tv) || (op === '<=' && v <= tv) || (op === '>' && v > tv) || (op === '>=' && v >= tv)) {
+          failCount++;
+        }
+      }
+    } catch { /* skip failed sample */ }
+  }
+  if (samples.length === 0) {
+    return res.status(500).json({ error: '蒙特卡洛采样全部失败，请检查参数' });
+  }
+  // 排序取分位数
+  const sorted = [...samples].sort((a, b) => a - b);
+  const q = (p: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(p * sorted.length)))];
+  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+  res.json({
+    samples,
+    mean,
+    p5: q(0.05),
+    p50: q(0.50),
+    p95: q(0.95),
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    failProb: failCount / samples.length,
+    threshold: threshold.value,
+    iterations: samples.length,
+  });
+});
+
+// ============ v4.3 新增：场景对比 ============
+// POST /api/calc/compare
+//   body: { name, scenarios: [{ label, params }] }
+//   → { results: [{ label, value, grade, unit, analysis }] }
+app.post('/api/calc/compare', (req, res) => {
+  const { name, scenarios = [] } = req.body ?? {};
+  if (!name || !CALC_REGISTRY[name]) {
+    return res.status(400).json({ error: `未知计算器: ${name}`, available: Object.keys(CALC_REGISTRY) });
+  }
+  if (!Array.isArray(scenarios) || scenarios.length < 2) {
+    return res.status(400).json({ error: 'scenarios 至少 2 个' });
+  }
+  const fn = CALC_REGISTRY[name];
+  const results = scenarios.map((sc: any) => {
+    try {
+      const r = fn(sc.params ?? {});
+      return {
+        label: String(sc.label ?? '未命名场景'),
+        value: r?.value,
+        unit: r?.unit,
+        grade: r?.grade,
+        analysis: r?.analysis,
+      };
+    } catch (e: any) {
+      return { label: String(sc.label ?? '未命名场景'), error: e?.message ?? '计算失败' };
+    }
+  });
+  res.json({ name, results });
+});
+
+// ============ 单计算器：放在最后（避免抢匹配 /api/calc/sensitivity/montecarlo/compare） ============
 app.post('/api/calc/:name', (req, res) => {
   const { name } = req.params;
+  // 保留路由名，让其他路由有机会处理
+  if (['sensitivity', 'montecarlo', 'compare'].includes(name)) {
+    return res.status(404).json({ error: `未知计算器: ${name}`, available: Object.keys(CALC_REGISTRY) });
+  }
   const fn = CALC_REGISTRY[name];
   if (!fn) {
     return res.status(400).json({ error: `未知计算器: ${name}`, available: Object.keys(CALC_REGISTRY) });
@@ -663,10 +856,6 @@ app.post('/api/calc/:name', (req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? '计算失败' });
   }
-});
-
-app.get('/api/calc', (_req, res) => {
-  res.json({ count: Object.keys(CALC_REGISTRY).length, names: Object.keys(CALC_REGISTRY) });
 });
 
 // ============ 多智能体协同（参数抽取 + 缓存重放 + SSE 流式） ============

@@ -6,7 +6,7 @@
  * 注入方式：将本文件 KBEntries 数组合并到 server/kb.ts 的现有 KB_ENTRIES 数组。
  */
 
-import type { KBEntry } from '../../../server/kb';
+import type { KBEntry } from '@server/kb';
 
 /**
  * 模块说明

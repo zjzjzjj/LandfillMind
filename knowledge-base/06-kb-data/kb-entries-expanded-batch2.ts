@@ -10,7 +10,7 @@
  *   - 行业最佳实践（信息化/智能化/BIM）
  */
 
-import type { KBEntry } from '../../../server/kb';
+import type { KBEntry } from '@server/kb';
 
 export const EXPANDED_KB_BATCH2: KBEntry[] = [
   // ============== 监测装备（monitoring equipment · m6）==============
