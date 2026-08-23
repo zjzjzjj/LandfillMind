@@ -508,7 +508,7 @@ export default function DesignPage() {
       </aside>
 
       {/* 中栏：参数 + 预设 */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* 顶栏：预设切换 */}
         <div className="flex items-center gap-3 px-6 py-3 border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
           <div className="flex items-center gap-2 min-w-0">
@@ -585,29 +585,24 @@ export default function DesignPage() {
         </div>
       </main>
 
-      {/* 右栏：结果面板（可折叠） */}
+      {/* 右栏：结果面板（浮动覆盖，不占布局空间，避免被挤出视口） */}
       {rightCollapsed ? (
-        // 折叠态：32px 窄条
-        <aside
-          className="flex-shrink-0 flex flex-col items-center"
-          style={{ width: 36, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
+        // 折叠态：32px 窄条，浮动在右下角
+        <button
+          onClick={() => setRightCollapsed(false)}
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5 py-3 px-1.5 rounded-l-xl shadow-lg transition-colors"
+          style={{ backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', color: 'var(--primary)' }}
+          title="展开结果面板"
         >
-          <button
-            onClick={() => setRightCollapsed(false)}
-            className="mt-3 p-1.5 rounded transition-colors"
-            style={{ color: 'var(--primary)' }}
-            title="展开结果面板"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <div className="mt-2 [writing-mode:vertical-rl] text-[10px] font-semibold tracking-widest" style={{ color: 'var(--text-muted)' }}>
-            结果
+          <ChevronLeft size={16} />
+          <div className="[writing-mode:vertical-rl] text-[10px] font-semibold tracking-widest" style={{ color: 'var(--text-muted)' }}>
+            结果面板
           </div>
-        </aside>
+        </button>
       ) : (
         <aside
-          className="flex-shrink-0 flex flex-col overflow-hidden"
-          style={{ width: 320, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
+          className="fixed right-0 top-0 bottom-0 z-30 flex flex-col overflow-hidden shadow-2xl"
+          style={{ width: 340, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
         >
           <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
             <Sparkles size={14} style={{ color: 'var(--primary)' }} />
