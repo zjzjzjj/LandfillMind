@@ -23,6 +23,7 @@ RUN npm ci --omit=dev
 # 复制前端构建产物（由 Express 同源托管）与后端源码
 COPY --from=frontend-builder /app/dist ./dist
 COPY server ./server
+COPY knowledge-base ./knowledge-base
 COPY .env.example .env
 
 # 数据目录 + 非 root 用户
