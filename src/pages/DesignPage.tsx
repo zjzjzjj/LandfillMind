@@ -384,7 +384,7 @@ export default function DesignPage() {
 
   // ============= 渲染 =============
   return (
-    <div className="flex h-[100dvh] w-[100vw]" style={{ backgroundColor: 'var(--bg-base)' }}>
+    <div className="flex h-full w-full" style={{ backgroundColor: 'var(--bg-base)' }}>
       {/* 左侧 240px 固定栏：计算器列表 */}
       <aside
         className="flex-shrink-0 flex flex-col overflow-hidden"
