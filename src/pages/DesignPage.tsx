@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calculator, Search, Sliders, Layers, GitCompare, Activity,
-  ChevronRight, FileDown, RotateCcw, Bookmark, FileText, Sparkles,
+  ChevronRight, ChevronLeft, FileDown, RotateCcw, Bookmark, FileText, Sparkles,
   TrendingUp, ShieldAlert, BarChart3, BookOpen,
 } from 'lucide-react';
 import type { CalcResult } from '../types';
@@ -217,6 +217,7 @@ export default function DesignPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [varyParam, setVaryParam] = useState<string>('H');
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [sensitivity, setSensitivity] = useState<{ xs: number[]; ys: number[]; baseValue: number; baseX: number } | null>(null);
   const [showFormula, setShowFormula] = useState(false);
   const [compareScenarios, setCompareScenarios] = useState<{ label: string; params: Record<string, number | string> }[]>(() => {
@@ -584,39 +585,66 @@ export default function DesignPage() {
         </div>
       </main>
 
-      {/* 右栏：结果面板 */}
-      <aside
-        className="flex-shrink-0 flex flex-col overflow-hidden"
-        style={{ width: 380, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
-      >
-        <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-          <Sparkles size={14} style={{ color: 'var(--primary)' }} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>结果面板</span>
-          {loading && <span className="text-[10px] ml-auto animate-pulse" style={{ color: 'var(--text-muted)' }}>计算中…</span>}
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {selected === COMPARE_ID && compareResult && (
-            <CompareResultPanel results={compareResult} />
-          )}
-          {selected === MONTE_ID && monteResult && (
-            <MonteCarloResultPanel result={monteResult} preset={preset} />
-          )}
-          {selected === COST_ID && (
-            <CostResultPanel result={costResult} inputs={debouncedCostInputs} />
-          )}
-          {selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && result && (
-            <SingleResultPanel
-              selected={selected}
-              result={result}
-              params={params}
-              sensitivity={sensitivity}
-              showFormula={showFormula}
-              setShowFormula={setShowFormula}
-              onExportMd={exportMd}
-              onExportHtml={exportHtml}
-              onExportJson={exportJson}
-            />
-          )}
+      {/* 右栏：结果面板（可折叠） */}
+      {rightCollapsed ? (
+        // 折叠态：32px 窄条
+        <aside
+          className="flex-shrink-0 flex flex-col items-center"
+          style={{ width: 36, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
+        >
+          <button
+            onClick={() => setRightCollapsed(false)}
+            className="mt-3 p-1.5 rounded transition-colors"
+            style={{ color: 'var(--primary)' }}
+            title="展开结果面板"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="mt-2 [writing-mode:vertical-rl] text-[10px] font-semibold tracking-widest" style={{ color: 'var(--text-muted)' }}>
+            结果
+          </div>
+        </aside>
+      ) : (
+        <aside
+          className="flex-shrink-0 flex flex-col overflow-hidden"
+          style={{ width: 320, backgroundColor: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}
+        >
+          <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+            <Sparkles size={14} style={{ color: 'var(--primary)' }} />
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>结果面板</span>
+            {loading && <span className="text-[10px] ml-auto animate-pulse" style={{ color: 'var(--text-muted)' }}>计算中…</span>}
+            <button
+              onClick={() => setRightCollapsed(true)}
+              className={`p-1 rounded transition-colors ${loading ? '' : 'ml-auto'}`}
+              style={{ color: 'var(--text-muted)' }}
+              title="折叠结果面板"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {selected === COMPARE_ID && compareResult && (
+              <CompareResultPanel results={compareResult} />
+            )}
+            {selected === MONTE_ID && monteResult && (
+              <MonteCarloResultPanel result={monteResult} preset={preset} />
+            )}
+            {selected === COST_ID && (
+              <CostResultPanel result={costResult} inputs={debouncedCostInputs} />
+            )}
+            {selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && result && (
+              <SingleResultPanel
+                selected={selected}
+                result={result}
+                params={params}
+                sensitivity={sensitivity}
+                showFormula={showFormula}
+                setShowFormula={setShowFormula}
+                onExportMd={exportMd}
+                onExportHtml={exportHtml}
+                onExportJson={exportJson}
+              />
+            )}
           {!result && selected !== COMPARE_ID && selected !== MONTE_ID && selected !== COST_ID && (
             <div className="text-center text-xs py-12" style={{ color: 'var(--text-muted)' }}>
               <Calculator size={28} className="mx-auto mb-2 opacity-30" />
@@ -624,7 +652,8 @@ export default function DesignPage() {
             </div>
           )}
         </div>
-      </aside>
+        </aside>
+      )}
     </div>
   );
 }
