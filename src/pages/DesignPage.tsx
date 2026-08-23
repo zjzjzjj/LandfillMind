@@ -437,7 +437,7 @@ export default function DesignPage() {
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto px-2 pt-2 pb-8">
           {groupedCalcs.map(group => (
             <div key={group.cat} className="mb-3">
               <div className="text-[10px] font-semibold uppercase tracking-widest px-2 py-1" style={{ color: 'var(--text-muted)' }}>
@@ -465,7 +465,7 @@ export default function DesignPage() {
           <div className="text-[10px] font-semibold uppercase tracking-widest px-2 py-1 mt-4 pb-2" style={{ color: 'var(--text-muted)' }}>
             高级分析
           </div>
-          <div className="space-y-0.5 pb-6">
+          <div className="space-y-0.5 pb-10">
             <SideNavItem icon={<GitCompare size={12} />} label="场景对比" active={selected === COMPARE_ID} onClick={() => { setSelected(COMPARE_ID); setResult(null); setSensitivity(null); }} />
             <SideNavItem icon={<Activity size={12} />} label="蒙特卡洛" active={selected === MONTE_ID} onClick={() => { setSelected(MONTE_ID); setResult(null); setSensitivity(null); }} />
             <SideNavItem icon={<TrendingUp size={12} />} label="成本估算" active={selected === COST_ID} onClick={() => { setSelected(COST_ID); setResult(null); setSensitivity(null); }} />
