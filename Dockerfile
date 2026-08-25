@@ -24,6 +24,7 @@ RUN npm ci --omit=dev
 COPY --from=frontend-builder /app/dist ./dist
 COPY server ./server
 COPY knowledge-base ./knowledge-base
+COPY OGS ./OGS
 COPY .env.example .env
 
 # 数据目录 + 非 root 用户

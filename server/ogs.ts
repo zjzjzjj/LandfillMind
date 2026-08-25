@@ -2,12 +2,12 @@
  * LandfillMind · OGS (OpenGeoSys) 数值模拟求解器集成
  *
  * 职责：
- *   1. 托管 OGS5 求解器（data/ogs/bin/ogs.exe）与场景模板（data/ogs/scenarios/<id>/）
+ *   1. 托管 OGS5 求解器（OGS/bin/ogs.exe）与场景模板（OGS/scenarios/<id>/）
  *   2. 按用户参数改写 OGS5 输入文件（.mmp/.bc/.ic/.tim/.st/.rfd）
  *   3. 无头运行求解器（spawn + 超时），解析 .tec 输出为结构化结果
  *
  * OGS5 求解器是本地可执行的 CLI 工具：`ogs.exe <basename>`（在模板目录内运行）。
- * 求解器路径可用环境变量 OGS_EXE 覆盖（默认 data/ogs/bin/ogs.exe）。
+ * 求解器路径可用环境变量 OGS_EXE 覆盖（默认 OGS/bin/ogs.exe）。
  */
 
 import { spawn } from 'child_process';
@@ -17,7 +17,10 @@ import { fileURLToPath } from 'url';
 import * as calc from './calculate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OGS_ROOT = path.resolve(__dirname, '../data/ogs');
+// OGS 求解器目录（优先项目根 OGS/，其次 data/ogs/）
+const OGS_ROOT_PRIMARY = path.resolve(__dirname, '../OGS');
+const OGS_ROOT_LEGACY = path.resolve(__dirname, '../data/ogs');
+const OGS_ROOT = fs.existsSync(OGS_ROOT_PRIMARY) ? OGS_ROOT_PRIMARY : OGS_ROOT_LEGACY;
 const OGS_BIN = path.join(OGS_ROOT, 'bin', 'ogs.exe');
 const OGS_SCENARIOS_DIR = path.join(OGS_ROOT, 'scenarios');
 export const OGS_RUNS_DIR = path.join(OGS_ROOT, 'runs');
@@ -150,14 +153,12 @@ export function resolveOgsExe(exeName?: string): string | null {
   }
   const env = process.env.OGS_EXE;
   if (env && fs.existsSync(env)) return env;
+  // 优先查找项目根 OGS/bin/，其次 data/ogs/bin/
+  const primaryBin = path.join(OGS_ROOT_PRIMARY, 'bin', 'ogs.exe');
+  if (fs.existsSync(primaryBin)) return primaryBin;
+  const legacyBin = path.join(OGS_ROOT_LEGACY, 'bin', 'ogs.exe');
+  if (fs.existsSync(legacyBin)) return legacyBin;
   if (fs.existsSync(OGS_BIN)) return OGS_BIN;
-  // 兼容用户本地的常见路径（未拷贝到项目时）
-  const candidates = [
-    'F:/文档/OGS/案例/TH2M/ogs.exe',
-    'F:/文档/OGS/案例/Data XCFei/aze/ogs.exe',
-    'F:/文档/OGS/OGS2020年12月课程/datasets/Task5_ogs_finalization/Tools/ogs.exe',
-  ];
-  for (const c of candidates) if (fs.existsSync(c)) return c;
   return null;
 }
 
