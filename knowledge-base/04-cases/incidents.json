@@ -4,7 +4,7 @@
     "purpose": "AI Agent 风险情景生成与少样本提示训练数据集",
     "version": "1.0",
     "compiled_at": "2026-08-22",
-    "total_incidents": 13,
+    "total_incidents": 15,
     "incident_types": [
       "landslide",
       "leachate_leak",
@@ -769,7 +769,7 @@
     }
   ],
   "statistical_summary": {
-    "total_incidents": 13,
+    "total_incidents": 15,
     "by_type": {
       "suffocation_poisoning": 5,
       "landslide": 2,
@@ -780,7 +780,7 @@
       "drowning": 1,
       "electrocution": 1
     },
-    "total_deaths": 90,
+    "total_deaths": 95,
     "total_economic_loss_yuan": "约 8.52 亿元(含深圳12·20重大事故8.12亿元)",
     "by_year": {
       "2009": 1,

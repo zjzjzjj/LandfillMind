@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Cpu, ChevronLeft, ChevronRight, AlertTriangle, ShieldAlert, Sparkles, Maximize2 } from 'lucide-react';
+import { Bot, Cpu, ChevronLeft, ChevronRight, ShieldAlert, Sparkles, Maximize2 } from 'lucide-react';
 import type { VerificationMismatch } from '../types';
 
 // 兼容字符串 / 结构化对象：统一抽取字段供 UI 渲染

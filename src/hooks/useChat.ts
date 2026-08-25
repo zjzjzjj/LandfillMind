@@ -166,8 +166,8 @@ export function useChat(opts: UseChatOptions) {
               const tc: ToolCall = {
                 id: event.callId ?? uuidv4(),
                 name: event.name,
-                // 后端回放事件会带 kind（'kb' / 'calc'），CodeBuddy 真 function calling 路径不带
-                type: (event.kind === 'kb' || event.kind === 'calc') ? event.kind : undefined,
+                // 后端回放事件会带 kind（'kb' / 'calc' / 'ogs'），CodeBuddy 真 function calling 路径不带
+                type: (event.kind === 'kb' || event.kind === 'calc' || event.kind === 'ogs') ? event.kind : undefined,
                 input: event.input ?? {},
                 status: 'running',
               };
@@ -179,9 +179,11 @@ export function useChat(opts: UseChatOptions) {
               ];
               updateSessionMessages(sid, liveMessagesRef.current, { skipPersist: true });
             } else if (event.type === 'tool_result') {
-              const existing = toolCallsMap.get(event.callId ?? '');
+              // 归一化 callId：后端漏发时避免以 undefined 作 Map key 写入
+              const callId = event.callId ?? '';
+              const existing = toolCallsMap.get(callId);
               if (existing) {
-                toolCallsMap.set(event.callId, {
+                toolCallsMap.set(callId, {
                   ...existing,
                   output: event.output,
                   status: event.error ? 'error' : 'success',

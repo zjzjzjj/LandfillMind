@@ -110,18 +110,21 @@ export function RiskMap({
       />
       
       {hoveredZone && (
-        <div 
-          className="absolute bg-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
-          style={{ 
-            left: '50%', 
-            bottom: '10px', 
+        <div
+          className="absolute px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
+          style={{
+            left: '50%',
+            bottom: '10px',
             transform: 'translateX(-50%)',
-            zIndex: 10
+            zIndex: 10,
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-primary)'
           }}
         >
           <div className="font-semibold">{hoveredZone.label}</div>
           {hoveredZone.description && (
-            <div className="text-xs text-gray-500">{hoveredZone.description}</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{hoveredZone.description}</div>
           )}
         </div>
       )}

@@ -18,13 +18,16 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
   const statusColor = tc.status === 'success' ? '#10b981' : tc.status === 'error' ? '#ef4444' : '#06b6d4';
 
   // 类型归类：type 优先（后端显式标注），否则按 name 推断兼容旧数据
-  const kind: 'kb' | 'calc' = tc.type
+  const kind: 'kb' | 'calc' | 'ogs' = tc.type
     ?? (tc.name === 'kb_lookup' ? 'kb'
+      : tc.name === 'ogs_sim' ? 'ogs'
       : tc.name === 'calculate' || tc.name === 'run_diagnosis' ? 'calc'
       : 'kb');
 
   // 标题与图标按类型分类
-  const headerLabel = kind === 'kb' ? '🔍 知识库检索增强' : '⚙ 工程计算（确定性内核）';
+  const headerLabel = kind === 'kb' ? '🔍 知识库检索增强'
+    : kind === 'ogs' ? '🌐 稳定化计算（OpenGeoSys 有限元求解）'
+    : '⚙ 工程计算（确定性内核）';
 
   // KB 输出：把 entries 的 ref / clause 单独渲染为可点击引用徽章
   let kbEntries: Array<{ title?: string; ref?: string; clause?: string }> | null = null;
@@ -41,6 +44,14 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
     try {
       const parsed = typeof tc.output === 'string' ? JSON.parse(tc.output) : tc.output;
       if (Array.isArray(parsed) && parsed[0]) calcSummary = parsed[0] as any;
+    } catch { /* 非 JSON 时退回到通用结果区 */ }
+  }
+
+  // 稳定化计算输出：结构化运行结果
+  let ogsResult: any = null;
+  if (kind === 'ogs' && tc.output !== undefined) {
+    try {
+      ogsResult = typeof tc.output === 'string' ? JSON.parse(tc.output) : tc.output;
     } catch { /* 非 JSON 时退回到通用结果区 */ }
   }
 
@@ -119,11 +130,33 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
                 </div>
               )}
 
-              {/* 检索关键词（KB） / 计算入参（计算） */}
+              {/* 稳定化计算结果 */}
+              {kind === 'ogs' && ogsResult && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+                    场景：<span className="font-mono">{ogsResult.scenarioName ?? ogsResult.scenario}</span>
+                    {ogsResult.ok ? <span className="ml-1.5 text-emerald-500">✓ 求解正常</span>
+                                  : <span className="ml-1.5 text-rose-500">⚠ 未正常收敛</span>}
+                  </p>
+                  {ogsResult.summary && (
+                    <pre className="text-[11px] font-mono whitespace-pre-wrap rounded-lg p-2"
+                         style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+                      {ogsResult.summary}
+                    </pre>
+                  )}
+                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    求解耗时 {ogsResult.elapsedMs}ms · 模拟 {ogsResult.simulationTime ?? '-'}
+                    {Array.isArray(ogsResult.timeSeries) && ogsResult.timeSeries.length > 0
+                      ? ` · 时程输出 ${ogsResult.timeSeries.length} 组` : ''}
+                  </p>
+                </div>
+              )}
+
+              {/* 检索关键词（KB） / 计算入参（计算） / 模拟参数（OGS） */}
               {tc.input && Object.keys(tc.input).length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
-                    {kind === 'kb' ? '检索关键词' : '计算入参'}
+                    {kind === 'kb' ? '检索关键词' : kind === 'ogs' ? '模拟参数' : '计算入参'}
                   </p>
                   <pre className="text-[11px] font-mono whitespace-pre-wrap rounded-lg p-2"
                        style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
@@ -133,7 +166,7 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
               )}
 
               {/* 兜底：无法解析时仍显示原始 output */}
-              {((kind === 'kb' && !kbEntries) || (kind === 'calc' && !calcSummary)) && tc.output !== undefined && (
+              {((kind === 'kb' && !kbEntries) || (kind === 'calc' && !calcSummary) || (kind === 'ogs' && !ogsResult)) && tc.output !== undefined && (
                 <div>
                   <p className="text-[10px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>结果</p>
                   <pre className="text-[11px] font-mono whitespace-pre-wrap rounded-lg p-2"

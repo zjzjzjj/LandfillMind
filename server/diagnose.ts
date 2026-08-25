@@ -809,7 +809,7 @@ export async function runDiagnosis(
     mismatches: [
       ...verification.mismatches,
       ...incidentMismatches.map(m => `${m.title}（${m.hazard}）：${m.field}。AI 报告未引用事故根因警示，已按 lessons_learned 追加处置：${m.action.split('；')[0]}`),
-    ] as Array<string | VerificationMismatch>,
+    ],
     correctedAt: new Date().toISOString(),
     incidentLessons: incidentMismatches.map(m => ({ incidentId: m.incidentId, title: m.title, severity: m.severity, action: m.action })),
   } as any;

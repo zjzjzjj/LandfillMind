@@ -48,9 +48,6 @@ interface KBStats {
 
 export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
-  if (!authenticated) {
-    return <AdminLoginGate onAuthenticated={() => setAuthenticated(true)} />;
-  }
   const [fb, setFb] = useState<FeedbackStat | null>(null);
   const [ab, setAB] = useState<ABStats | null>(null);
   const [kb, setKB] = useState<KBStats | null>(null);
@@ -87,7 +84,13 @@ export default function AdminPage() {
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  // 登录门判断必须放在所有 hooks 之后：authenticated 翻转时若 hooks 数量变化，
+  // React 会抛 "Rendered more hooks than during the previous render" 崩溃。
+  // 因此全部 useState/useMemo/useEffect 声明在前，仅当通过登录后才渲染数据面板。
+  useEffect(() => {
+    if (authenticated) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated]);
 
   const trendIcon = fb?.recentTrend === 'up' ? <TrendingUp size={14} className="text-emerald-400" />
     : fb?.recentTrend === 'down' ? <TrendingDown size={14} className="text-rose-400" />
@@ -118,6 +121,10 @@ export default function AdminPage() {
     distilled: fb?.distillCandidates.length ?? 0,
     total: Math.max(20, fb?.lowScoreComments.length ?? 20),
   }), [fb?.distillCandidates, fb?.lowScoreComments]);
+
+  if (!authenticated) {
+    return <AdminLoginGate onAuthenticated={() => setAuthenticated(true)} />;
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-6" style={{ backgroundColor: 'var(--bg-base)' }}>

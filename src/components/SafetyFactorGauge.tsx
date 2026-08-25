@@ -2,7 +2,7 @@
  * SafetyFactorGauge · 边坡稳定安全系数 Fs 专用仪表盘
  *
  * 设计要点：
- * - 圆弧 240° 进度弧（不是整圆，留 120° 给文字）
+ * - 圆弧 300° 进度弧（不是整圆，留 60° 给文字）
  * - 阈值弧（1.0 / 1.3 / 1.5）用同色环文字标出
  * - 颜色按 CJJ 176-2012：Fs<1.0 红 / 1.0-1.2 橙 / 1.2-1.3 黄 / ≥1.3 绿
  * - 数字大字号 + 单位（无量纲）
@@ -61,7 +61,7 @@ export function SafetyFactorGauge({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Fs]);
 
-  // 几何：240° 弧（左 60° 到右 60°）
+  // 几何：300° 弧（左 120° 到右 60°，留底部 60° 给文字）
   const cx = size / 2;
   const cy = size * 0.62;
   const r = size * 0.38;

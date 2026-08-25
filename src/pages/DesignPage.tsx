@@ -9,7 +9,7 @@
  *   - 公式推导（折叠）
  *   - 3 个聚合视图：场景对比 / 蒙特卡洛 / 成本估算（独立全宽视图）
  *
- * 实时计算保留（debounce 300ms），同时支持"立即计算"按钮触发
+ * 主计算手动触发（"立即计算"按钮）；敏感性/蒙特卡洛/成本等辅助计算用 debounce
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -243,9 +243,7 @@ export default function DesignPage() {
   const [monteResult, setMonteResult] = useState<any>(null);
   const [costInputs, setCostInputs] = useState({ capacityM3: 300000, leachateM3PerYear: 10000, monitorWells: 8 });
 
-  // 立即计算时缩短 debounce 到 0；自动计算用 300ms（保留供敏感性等辅助计算用）
-  const debouncedParams = useDebounce(params, 300);
-  const debouncedVaryParam = useDebounce(varyParam, 500);
+  // 辅助计算（敏感性/蒙特卡洛/场景对比/成本）用 debounce；主计算由 calcTrigger 手动触发
   const debouncedMonteParams = useDebounce(monteParams, 500);
   const debouncedCompareScenarios = useDebounce(compareScenarios, 500);
   const debouncedCostInputs = useDebounce(costInputs, 300);

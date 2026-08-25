@@ -5,13 +5,13 @@
 
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts/core';
-import { LineChart, BarChart, PieChart, RadarChart } from 'echarts/charts';
+import { LineChart, BarChart, RadarChart } from 'echarts/charts';
 import { TitleComponent, TooltipComponent, GridComponent, LegendComponent, DatasetComponent, ToolboxComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { LabelLayout, UniversalTransition } from 'echarts/features';
 
 echarts.use([
-  LineChart, BarChart, PieChart, RadarChart,
+  LineChart, BarChart, RadarChart,
   TitleComponent, TooltipComponent, GridComponent, LegendComponent, DatasetComponent, ToolboxComponent,
   CanvasRenderer, LabelLayout, UniversalTransition,
 ]);

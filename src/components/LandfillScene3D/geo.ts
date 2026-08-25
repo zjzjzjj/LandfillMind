@@ -84,4 +84,6 @@ export interface LandfillApi {
   startRoaming(): void;
   stopRoaming(): void;
   capturePng(): string | null;
+  setHotspotsVisible(v: boolean): void;
+  setLiveLabelsVisible(v: boolean): void;
 }

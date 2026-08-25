@@ -671,26 +671,6 @@ export default {
   decayCalc,
 };
 
-// =================================================================
-// v4.3 敏感性 + 蒙特卡洛（占位契约，实际在 index.ts 实现）
-// =================================================================
-export function sensitivity1D(
-  calcName: string, baseParams: Record<string, number>, varyParam: string,
-  n: number = 20, range?: [number, number],
-): { xs: number[]; ys: number[]; baseValue: number; baseX: number; param: string; unit?: string } {
-  return { xs: [], ys: [], baseValue: 0, baseX: 0, param: varyParam, unit: undefined };
-}
-export function monteCarloRisk(
-  calcName: string, baseParams: Record<string, number>,
-  paramDist: Record<string, { mean: number; std: number }>,
-  threshold: { op: '<' | '<=' | '>' | '>='; value: number },
-  iterations: number = 500,
-) {
-  return {
-    samples: [], mean: 0, p5: 0, p50: 0, p95: 0, min: 0, max: 0,
-    failProb: 0, threshold: threshold.value, iterations: 0,
-  };
-}
 export function gaussian(): number {
   let u = 0, v = 0;
   while (u === 0) u = Math.random();

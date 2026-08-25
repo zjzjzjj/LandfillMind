@@ -2,10 +2,12 @@ import { hybridSearch } from './retrieval.js';
 import * as calc from './calculate.js';
 import { llmComplete } from './llm.js';
 import { EXPERT_GLOSSARY_HINT } from './prompts.js';
+import { runOgsScenario } from './ogs.js';
 
 export interface KBSource { title: string; ref: string; clause: string; detail?: string; }
 export interface CalcSource { name: string; formula: string; ref: string; result?: string; }
-export interface Augmentation { contextText: string; kb: KBSource[]; calcs: CalcSource[]; }
+export interface OgsSource { input: { scenario: string; params: Record<string, number> }; result: any; }
+export interface Augmentation { contextText: string; kb: KBSource[]; calcs: CalcSource[]; ogs?: OgsSource | null; }
 
 export const CALC_FORMULAS: Record<string, string> = {
   slopeFs: 'Fs = (c·L + W·cos²α·tanφ) / (W·sinα·cosα)；运行期要求 Fs ≥ 1.30（CJJ 176-2012 §4.5）',
@@ -20,6 +22,8 @@ export const CALC_FORMULAS: Record<string, string> = {
   decayCalc: 'T = ln(C0/Ct) / λ；λ = ln2 / t½（HJ 25.6-2019）',
   linerKeq: 'k_eq = d_total² / (d₂²/k₂ + d₁·d₂·θ/k₁)；k_eq ≤ 1×10⁻⁹ cm/s（GB 16889-2008 §5.1）',
   settlementHyper: 's(t) = s∞·t / (a + t)（CJJ 176-2012 §4.6，双曲线法）',
+  optimizeWellSpacing: 'D = √3·R（梅花形）或 2R（方形），井群叠加降深 = 单井 × (1+interference)',
+  moisturePredict: 'ΔS = inflow − et − runoff；储水量上限 = storageMax（CJJ 176-2012 §5.3）',
 };
 
 function num(s: string, re: RegExp, fb: number): number {
@@ -29,6 +33,25 @@ function num(s: string, re: RegExp, fb: number): number {
 const n = (v: unknown, fb: number) => (typeof v === 'number' && Number.isFinite(v)) ? v : fb;
 
 export interface CalcIntent { name: string; params: Record<string, number | string>; }
+
+export interface OgsIntent { scenario: string; params: Record<string, number>; }
+
+/**
+ * 关键词 → OGS 数值模拟意图路由（保守触发：必须含模拟/仿真类词）
+ * 产气/填埋气 → gas-production（约 20s）；沉降/固结 → settlement（约 1s）；其它模拟词默认 gas-production
+ */
+export function detectOgsIntent(q: string): OgsIntent | null {
+  if (!q) return null;
+  const sim = /模拟|仿真|数值|有限元|渗流场|水头分布|OpenGeoSys|\bOGS\b|数值计算|运移模拟|产气|沉降/.test(q);
+  if (!sim) return null;
+  if (/(产气|填埋气|产甲烷|CH4|甲烷产量|气体|厌氧).*(模拟|计算)|(模拟|计算).*(产气|填埋气|产甲烷|气体)/.test(q)) {
+    return { scenario: 'gas-production', params: {} };
+  }
+  if (/(沉降|固结|压缩|s\(t\)|变形).*(模拟|计算)|(模拟|计算).*(沉降|固结)/.test(q)) {
+    return { scenario: 'settlement', params: {} };
+  }
+  return { scenario: 'gas-production', params: {} };
+}
 
 /** 关键词 → 计算器意图路由（12 个计算器） */
 export function detectCalcIntent(q: string): CalcIntent | null {
@@ -106,7 +129,22 @@ export async function buildChatAugmentation(query: string): Promise<Augmentation
   const kbText = kb.length
     ? '【知识库参考】\n' + kb.map((e, i) => `${i + 1}. ${e.title}\n   规范：${e.ref}\n   要点：${e.clause}`).join('\n')
     : '';
-  const contextText = [kbText, calcText].filter(Boolean).join('\n\n');
+
+  // OGS 数值模拟：用户要求"模拟/仿真"时真实运行求解器，结果注入上下文
+  let ogs: OgsSource | null = null;
+  let ogsText = '';
+  const ogsIntent = detectOgsIntent(query);
+  if (ogsIntent) {
+    try {
+      const r = await runOgsScenario(ogsIntent.scenario, ogsIntent.params);
+      ogs = { input: { scenario: ogsIntent.scenario, params: ogsIntent.params }, result: r };
+      ogsText = `【OGS 数值模拟参考】场景：${r.scenarioName}${r.ok ? '' : '（⚠ 未正常收敛）'}\n${r.summary}\n（求解耗时 ${r.elapsedMs}ms，模拟 ${r.simulationTime ?? '-'}）`;
+    } catch (e) {
+      ogsText = `【OGS 数值模拟】调用失败：${(e as Error).message}`;
+    }
+  }
+
+  const contextText = [kbText, calcText, ogsText].filter(Boolean).join('\n\n');
   const result: Augmentation = {
     contextText: contextText
       ? contextText
@@ -115,6 +153,7 @@ export async function buildChatAugmentation(query: string): Promise<Augmentation
       : '',
     kb,
     calcs,
+    ogs,
   };
 
   // 写缓存：超容量时删最早插入（FIFO/LRU 简化）

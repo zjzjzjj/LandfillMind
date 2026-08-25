@@ -54,7 +54,14 @@ export function CalculationAnimation({
                 <span className="text-sm font-medium">{step.label}</span>
               </div>
               <div className="font-mono text-xs ml-7 mt-1" style={{ color: 'var(--text-secondary)' }}>{step.formula}</div>
-              {isActive && <div className="text-xs ml-7 mt-1" style={{ color: 'var(--text-muted)' }}>{step.detail}</div>}
+              {isActive && (
+                <div className="text-xs ml-7 mt-1 space-y-0.5">
+                  <div style={{ color: 'var(--text-muted)' }}>{step.detail}</div>
+                  {step.result !== undefined && (
+                    <div style={{ color: /满足|达标|✓/.test(String(step.result)) ? '#10b981' : '#ea580c' }}>{step.result}</div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

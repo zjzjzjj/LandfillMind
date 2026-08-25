@@ -15,6 +15,7 @@ const MultiAgentPage = lazy(() => import('./pages/MultiAgentPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SimulatorPage = lazy(() => import('./pages/SimulatorPage'));
+const OgsSimPage = lazy(() => import('./pages/OgsSimPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 // 布局组件
@@ -43,6 +44,7 @@ export default function App() {
       <Route path="/design" element={<AppShell />} />
       <Route path="/multi-agent" element={<AppShell />} />
       <Route path="/3d-simulator" element={<AppShell />} />
+      <Route path="/ogs-sim" element={<AppShell />} />
       <Route path="/settings" element={<AppShell />} />
       <Route path="/admin" element={
         <Suspense fallback={<div className="flex items-center justify-center h-screen text-sm" style={{ color: 'var(--text-muted)' }}>加载管理员后台...</div>}>
@@ -65,6 +67,7 @@ function AppShell() {
   const isHomePage = location.pathname === '/';
   const isMultiAgentPage = location.pathname === '/multi-agent';
   const isSimulatorPage = location.pathname === '/3d-simulator';
+  const isOgsSimPage = location.pathname === '/ogs-sim';
 
   const { theme, toggleTheme } = useTheme();
   const { agents, addAgent, updateAgent, deleteAgent, getAgent } = useAgents();
@@ -149,6 +152,7 @@ function AppShell() {
   const handleOpenDesign = useCallback(() => navigate('/design'), [navigate]);
   const handleOpenMultiAgent = useCallback(() => navigate('/multi-agent'), [navigate]);
   const handleOpenSimulator = useCallback(() => navigate('/3d-simulator'), [navigate]);
+  const handleOpenOgsSim = useCallback(() => navigate('/ogs-sim'), [navigate]);
 
   const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
     setPermissionModeState(mode);
@@ -177,10 +181,13 @@ function AppShell() {
           onOpenDesign={handleOpenDesign}
           onOpenMultiAgent={handleOpenMultiAgent}
           onOpenSimulator={handleOpenSimulator}
+          onOpenOgsSim={handleOpenOgsSim}
+          onOpenAdmin={() => navigate('/admin')}
           isDiagnosePage={isDiagnosePage}
           isDesignPage={isDesignPage}
           isMultiAgentPage={isMultiAgentPage}
           isSimulatorPage={isSimulatorPage}
+          isOgsSimPage={isOgsSimPage}
         />
         </ErrorBoundary>
       )}
@@ -211,11 +218,13 @@ function AppShell() {
           ) : isDiagnosePage ? (
             <DiagnosisPage />
           ) : isHomePage ? (
-            <HomePage onNavigate={navigate} />
+            <HomePage />
           ) : isMultiAgentPage ? (
             <MultiAgentPage />
           ) : isSimulatorPage ? (
             <SimulatorPage />
+          ) : isOgsSimPage ? (
+            <OgsSimPage />
           ) : (
             <ChatPage
               currentSession={currentSession}

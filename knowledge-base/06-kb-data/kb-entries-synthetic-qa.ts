@@ -42,7 +42,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '垃圾要压实到 0.9 吨/方以上才算合格。推铺 30~50cm 虚料、用 ≥ 18 吨振动压路机压 4~5 遍，每单元必做压实度抽检。',
     cite: 'CJJ 176-2012 §5.5 / CJJ 133-2004',
     clause: '卫生填埋应分层压实，单位面积压实能量不应小于 1500 kJ/m³。',
-    related: ['fillOperation', 'slope-settlement-rate'],
+    related: ['fillOperation', 'slope-long-term-settlement'],
   },
   {
     key: 'slope-rainfall-condition',
@@ -75,7 +75,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '垃圾堆 10~30 年还在慢慢沉——沉降量约堆高的 1/3，蠕变持续几十年。封场 5 年后还要继续监测，每年实测 1 次。',
     cite: 'CJJ 176-2012 §4.6 / Merchant 1971',
     clause: '长期沉降应计入次固结与蠕变分量，时间跨度不低于 10 年。',
-    related: ['settlement', 'slope-settlement-rate'],
+    related: ['settlement', 'slope-monitoring-warning-levels'],
     calc: 'settlementHyper',
   },
   {
@@ -87,7 +87,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '边坡出问题分三级——超 1.3 倍黄灯、超 2 倍橙灯、超 3 倍或 Fs<1.10 红灯。红灯就是停工、撤人、削坡。',
     cite: 'CJJ/T 213-2016 §7 / 建办城〔2025〕60 号',
     clause: '三级预警响应应以监测数据倍增机制为依据，逐级启动应急预案。',
-    related: ['slope-fs-thresholds', 'slope-surface-displacement', 'alert-response-matrix'],
+    related: ['slope-fs-thresholds', 'slope-surface-displacement'],
   },
 
   /* ===================== 渗滤液（leachate · m6）===================== */
@@ -111,7 +111,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '菌种先"喂淡"再"喂浓"——第一周只给 10% 原水、慢慢加量，30~60 天驯化完。联动试车 72 小时不出故障才算过关。',
     cite: 'HJ 564-2010 §8 / CJJ/T 213-2016',
     clause: '渗滤液处理设施调试应分阶段进行，菌种驯化期不少于 30 天。',
-    related: ['leachate-process-selection', 'leachate-sludge'],
+    related: ['leachate-process-selection', 'leachate-sludge-handling'],
   },
   {
     key: 'leachate-sludge-handling',
@@ -122,7 +122,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '渗滤液处理会产生污泥——带机脱水到 80% 含水率，回灌填埋场或当危废处置。每年做一次危废鉴定。',
     cite: 'GB 16889-2008 §5 / HJ 564-2010 / GB 5085.3',
     clause: '剩余污泥经鉴定为危险废物的，应按危废管理要求处置；非危废可回灌填埋。',
-    related: ['leachate-process-selection', 'leachate-concentrate'],
+    related: ['leachate-process-selection', 'leachate-concentrate-disposal'],
   },
   {
     key: 'leachate-concentrate-disposal',
@@ -339,10 +339,10 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '进填埋场 PPE 五件套——安全帽、防滑鞋、防护手套、反光背心、H₂S 检测仪。下井（受限空间）必须戴正压呼吸器、双钩安全带。每月检查有效期。',
     cite: 'GB/T 11651-2008 / GB 46768-2025 / GB 12358',
     clause: '受限空间作业应配备正压式呼吸器、双钩安全带与气体检测仪。',
-    related: ['worker-exposure-limits', 'safety-hot-work'],
+    related: ['safety-h2s-limit', 'safety-hot-work-grading'],
   },
   {
-    key: 'safety-hot-work',
+    key: 'safety-hot-work-grading',
     module: 'm6',
     kw: ['动火', '动火分级', '一级动火', '二级', '三级', '许可证'],
     q: '填埋场动火作业怎么分级？许可证怎么开？',
@@ -350,7 +350,7 @@ export const SYNTHETIC_QA_ENTRIES: KBEntry[] = [
     easy: '填埋场动火分三级——一级（导气井里）CH₄ <0.5%、二级（作业面）CH₄ <1%、三级（车间）常规监护。每张许可证限时、当场监测、动火后复查阴燃。',
     cite: 'GB 30871-2022 §5',
     clause: '填埋场一级动火前应连续监测甲烷浓度不超过 0.5%，并办理一级动火证。',
-    related: ['worker-exposure-limits', 'safety-ppe-selection'],
+    related: ['safety-h2s-limit', 'safety-ppe-selection'],
   },
   {
     key: 'safety-emergency-equipment',

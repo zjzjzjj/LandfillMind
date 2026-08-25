@@ -9,7 +9,7 @@ echo   一键启动脚本 - 自动启动服务 + 打开浏览器
 echo ============================================================
 echo.
 
-cd /d "E:\Son of  the SEA\260811\sea-agent-web-v2"
+cd /d "%~dp0"
 
 :: 检查 Node.js 是否可用
 where node >nul 2>&1

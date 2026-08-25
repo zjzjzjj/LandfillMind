@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
-import { Plus, Settings, Stethoscope, Calculator, MessageCircle, BrainCircuit, X, Boxes, Shield } from 'lucide-react';
+import { Plus, Settings, Stethoscope, Calculator, MessageCircle, BrainCircuit, X, Boxes, Shield, FlaskConical } from 'lucide-react';
 import type { Agent, Session } from '../types';
 
-interface SidebarProps { sessions: Session[]; currentSessionId: string | null; isSettingsPage: boolean; isDiagnosePage: boolean; isDesignPage: boolean; isMultiAgentPage: boolean; isSimulatorPage: boolean; sidebarOpen: boolean; agents: Agent[]; getAgent: (id: string) => Agent | undefined; onNewChat: () => void; onSelectSession: (sessionId: string) => void; onDeleteSession: (sessionId: string) => void; onOpenSettings: () => void; onOpenDiagnose: () => void; onOpenDesign: () => void; onOpenMultiAgent: () => void; onOpenSimulator: () => void; }
+interface SidebarProps { sessions: Session[]; currentSessionId: string | null; isSettingsPage: boolean; isDiagnosePage: boolean; isDesignPage: boolean; isMultiAgentPage: boolean; isSimulatorPage: boolean; isOgsSimPage: boolean; sidebarOpen: boolean; agents: Agent[]; getAgent: (id: string) => Agent | undefined; onNewChat: () => void; onSelectSession: (sessionId: string) => void; onDeleteSession: (sessionId: string) => void; onOpenSettings: () => void; onOpenDiagnose: () => void; onOpenDesign: () => void; onOpenMultiAgent: () => void; onOpenSimulator: () => void; onOpenOgsSim: () => void; onOpenAdmin: () => void; }
 interface NavItemProps { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; badge?: string; }
 
 function NavItem({ icon, label, active, onClick, badge }: NavItemProps) {
@@ -27,7 +27,7 @@ function SessionItem({ session, isActive, onSelect, onDelete }: { session: Sessi
   );
 }
 
-export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnosePage, isDesignPage, isMultiAgentPage, isSimulatorPage, sidebarOpen, agents, onNewChat, onSelectSession, onDeleteSession, onOpenSettings, onOpenDiagnose, onOpenDesign, onOpenMultiAgent, onOpenSimulator }: SidebarProps) {
+export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnosePage, isDesignPage, isMultiAgentPage, isSimulatorPage, isOgsSimPage, sidebarOpen, agents, onNewChat, onSelectSession, onDeleteSession, onOpenSettings, onOpenDiagnose, onOpenDesign, onOpenMultiAgent, onOpenSimulator, onOpenOgsSim, onOpenAdmin }: SidebarProps) {
   const [chatHover, setChatHover] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   if (!sidebarOpen) return null;
@@ -48,6 +48,7 @@ export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnose
           <NavItem icon={<Stethoscope size={15} />} label="AI 快诊" active={isDiagnosePage} onClick={onOpenDiagnose} />
           <NavItem icon={<Calculator size={15} />} label="计算中心" active={isDesignPage} onClick={onOpenDesign} />
           <NavItem icon={<Boxes size={15} />} label="3D 模拟" active={isSimulatorPage} onClick={onOpenSimulator} />
+          <NavItem icon={<FlaskConical size={15} />} label="稳定化计算" active={isOgsSimPage} onClick={onOpenOgsSim} />
           <NavItem icon={<BrainCircuit size={15} />} label="多智能体" active={isMultiAgentPage} onClick={onOpenMultiAgent} />
           <NavItem icon={<MessageCircle size={15} />} label="专家问答" active={false} onClick={onNewChat} />
         </nav>
@@ -66,7 +67,7 @@ export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnose
           icon={<Shield size={15} />}
           label="管理员后台"
           active={false}
-          onClick={() => window.location.assign('/admin')}
+          onClick={onOpenAdmin}
         />
       </div>
     </aside>

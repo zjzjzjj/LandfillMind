@@ -22,6 +22,7 @@ import { gaussian } from './calculate.js';
 
 import { initRetrieval } from './retrieval.js';
 import { buildChatAugmentation, summarizeConversation, detectCalcIntent } from './augment.js';
+import { getOgsStatus, listOgsScenarios, runOgsScenario, getOgsRunFiles } from './ogs.js';
 import type { DetailLevel } from './llm.js';
 import type { CompatCfg } from './llm.js';
 import { generateFollowUp, FOLLOW_UP_GUIDES } from './followUp.js';
@@ -204,7 +205,7 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
     //   注意：aug 在此处只是后端 RAG 检索增强，不走 OpenAI / Anthropic 真 function calling schema
     //   标注为"内部参考"以引导 LLM 基于检索结果作答、禁止编造规范条款
     const lastUser = [...msgs].reverse().find((m: any) => m.role === 'user');
-    const aug: { contextText: string; kb: any[]; calcs: any[] } = lastUser
+    const aug: { contextText: string; kb: any[]; calcs: any[]; ogs?: any } = lastUser
       ? await buildChatAugmentation(String(lastUser.content ?? ''))
       : { contextText: '', kb: [], calcs: [] };
     if (aug.contextText) {
@@ -287,6 +288,11 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
       const c = aug.calcs[0];
       res.write(`data: ${JSON.stringify({ type: 'tool_call', callId, name: 'calculate', kind: 'calc', input: intent ? { name: intent.name, params: intent.params } : { name: c.name } })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'tool_result', callId, name: 'calculate', kind: 'calc', output: JSON.stringify(aug.calcs) })}\n\n`);
+    }
+    if (aug.ogs) {
+      const callId = uuidv4();
+      res.write(`data: ${JSON.stringify({ type: 'tool_call', callId, name: 'ogs_sim', kind: 'ogs', input: aug.ogs.input })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'tool_result', callId, name: 'ogs_sim', kind: 'ogs', output: JSON.stringify(aug.ogs.result) })}\n\n`);
     }
 
     while (true) {
@@ -874,6 +880,33 @@ app.post('/api/calc/:name', (req, res) => {
   }
 });
 
+// ============ OGS (OpenGeoSys) 数值模拟 ============
+// GET /api/ogs/status → 求解器可用性 + 场景列表
+app.get('/api/ogs/status', (_req, res) => {
+  const s = getOgsStatus();
+  res.json({ ok: true, ...s });
+});
+// POST /api/ogs/run → { scenario, params } → 运行求解器返回结构化结果
+app.post('/api/ogs/run', async (req, res) => {
+  const { scenario, params = {} } = req.body ?? {};
+  if (!scenario) {
+    return res.status(400).json({ ok: false, error: '缺少 scenario', scenarios: listOgsScenarios().map((s) => s.id) });
+  }
+  try {
+    const result = await runOgsScenario(String(scenario), params ?? {});
+    if (result.ok) return res.json(result);
+    return res.status(422).json(result);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message ?? 'OGS 运行异常' });
+  }
+});
+// GET /api/ogs/runs/:id → 某次运行的输出文件清单（供前端展示/下载）
+app.get('/api/ogs/runs/:id', (req, res) => {
+  const files = getOgsRunFiles(req.params.id);
+  if (!files) return res.status(404).json({ ok: false, error: 'run not found' });
+  res.json({ ok: true, runId: req.params.id, files });
+});
+
 // ============ 多智能体协同（参数抽取 + 缓存重放 + SSE 流式） ============
 app.post('/api/multiagent', async (req, res) => {
   const { scenario, agent, peerResults, params, detail } = req.body as {
@@ -1036,7 +1069,7 @@ app.get('/api/admin/auth-status', (_req, res) => {
 });
 
 // ============ P3 A/B 测试系统（G） ============
-import { selectVariant, recordImpression, getABStats, getAllVariants } from './abTest';
+import { selectVariant, recordImpression, getABStats, getAllVariants, recordFeedback } from './abTest';
 app.get('/api/ab/variants', (_req, res) => {
   res.json({ ok: true, variants: getAllVariants() });
 });

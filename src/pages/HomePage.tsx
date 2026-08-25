@@ -2,7 +2,6 @@ import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import { Stethoscope, Calculator, MessageCircle, ArrowRight, Shield, Zap, BookOpen, HardHat, Printer, X, Sparkles, TrendingUp, Layers, Cpu, Activity } from 'lucide-react';
-import type { NavigateFunction } from 'react-router-dom';
 import type { DiagnosisResult } from '../types';
 import { buildSafetyBrief } from '../utils/safetyBrief';
 import { openPrintableHtml, exportEmergencyPosterHtml } from '../utils/exporter';
@@ -167,11 +166,7 @@ function StatCard({ label, value, unit, color, sparkline, icon }: StatCardProps)
   );
 }
 
-interface HomePageProps {
-  onNavigate: NavigateFunction;
-}
-
-export default function HomePage({ onNavigate }: HomePageProps) {
+export default function HomePage() {
   const navigate = useNavigate();
 
   // 一键带入对话：写 sessionStorage，ChatPage 挂载后自动发送
@@ -738,7 +733,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           <div className="flex flex-wrap gap-2">
             {[
               'GB 16889-2008', 'CJJ 176-2012', 'HJ 25.1~25.6', 'GB 36600-2018',
-              'GB/T 14848-2017', 'HJ 1139-2020', 'GB 55038-2025', 'AQ 4202-2009',
+              'GB/T 14848-2017', 'HJ 1106-2020', 'GB 55038-2025', 'AQ 4202-2008',
             ].map(std => (
               <span
                 key={std}

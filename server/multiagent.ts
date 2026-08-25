@@ -150,7 +150,10 @@ async function kbRef(q: string): Promise<{ cite: string; block: string }> {
   return { cite: `KB(${q})`, block: `KB(${q})` };
 }
 
-const GRADE_RANK: Record<MAGrade, number> = { green: 0, yellow: 1, blue: 2, orange: 3, red: 4 };
+// 风险严重度升序：正常 < 关注(blue) < 注意(yellow) < 警示(orange) < 危险(red)
+// 注意与 server/diagnose.ts 的 SEVERITY_RANK（blue:0 < yellow:1）保持一致；
+// 旧值把 blue 排在 yellow 之上，会导致 summary 取最差时 gw=blue 压过 slope=yellow 的误判。
+const GRADE_RANK: Record<MAGrade, number> = { green: 0, blue: 1, yellow: 2, orange: 3, red: 4 };
 const GRADE_LABEL: Record<MAGrade, string> = {
   red: '危险', orange: '警示', yellow: '注意', blue: '关注', green: '正常',
 };

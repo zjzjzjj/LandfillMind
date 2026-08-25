@@ -13,11 +13,11 @@ set DESKTOP=%USERPROFILE%\Desktop
 
 :: 创建"启动"快捷方式
 echo [*] 创建桌面快捷方式: LandfillMind-启动.lnk
-powershell -Command "$s = (New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\LandfillMind-启动.lnk'); $s.TargetPath = 'E:\Son of  the SEA\260811\sea-agent-web-v2\start.bat'; $s.WorkingDirectory = 'E:\Son of  the SEA\260811\sea-agent-web-v2'; $s.IconLocation = 'shell32.dll,13'; $s.Description = '启动 LandfillMind 智能体系统'; $s.Save()" > nul 2>&1
+powershell -Command "$s = (New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\LandfillMind-启动.lnk'); $s.TargetPath = '%~dp0start.bat'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = 'shell32.dll,13'; $s.Description = '启动 LandfillMind 智能体系统'; $s.Save()" > nul 2>&1
 
 :: 创建"关闭"快捷方式
 echo [*] 创建桌面快捷方式: LandfillMind-关闭.lnk
-powershell -Command "$s = (New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\LandfillMind-关闭.lnk'); $s.TargetPath = 'E:\Son of  the SEA\260811\sea-agent-web-v2\stop.bat'; $s.WorkingDirectory = 'E:\Son of  the SEA\260811\sea-agent-web-v2'; $s.IconLocation = 'shell32.dll,27'; $s.Description = '关闭 LandfillMind 服务'; $s.Save()" > nul 2>&1
+powershell -Command "$s = (New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\LandfillMind-关闭.lnk'); $s.TargetPath = '%~dp0stop.bat'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = 'shell32.dll,27'; $s.Description = '关闭 LandfillMind 服务'; $s.Save()" > nul 2>&1
 
 :: 创建"主页面"快捷方式（已运行服务时直接打开）
 echo [*] 创建桌面快捷方式: LandfillMind-主页.lnk

@@ -7,7 +7,7 @@
  *   3. 自动识别低分条目 → 生成 KB 蒸馏候选
  *
  * 数据流：
- *   用户点击 → POST /api/feedback → SQLite 存储
+ *   用户点击 → POST /api/feedback → 内存存储（LRU + TTL，见下方实现）
  *   管理员查看 → GET /api/feedback/stats
  *   自动蒸馏 → /api/feedback/distill（自动用 LLM 生成改进版 KB 条目）
  */
@@ -35,7 +35,7 @@ export interface DbFeedback {
 }
 
 /**
- * SQLite 表结构（db.ts 中也需要添加）：
+ * SQLite 表结构（参考设计，未落地——当前为内存实现，见下方注释）：
  *   CREATE TABLE feedback (
  *     id TEXT PRIMARY KEY,
  *     session_id TEXT,

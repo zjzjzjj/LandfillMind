@@ -107,8 +107,8 @@ function RiskCard({ item }: { item: RiskItem }) {
                   </span>
                   <span className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{step.label}</span>
                 </div>
-                <div className="font-mono text-[10px] mb-0.5 pl-5.5" style={{ color: 'var(--text-muted)' }}>{step.formula}</div>
-                <div className="text-[11px] leading-relaxed pl-5.5" style={{ color: 'var(--text-secondary)' }}>{step.detail}</div>
+                <div className="font-mono text-[10px] mb-0.5 pl-6" style={{ color: 'var(--text-muted)' }}>{step.formula}</div>
+                <div className="text-[11px] leading-relaxed pl-6" style={{ color: 'var(--text-secondary)' }}>{step.detail}</div>
               </div>
             ))}
           </div>
@@ -723,16 +723,6 @@ export default function DiagnosisPage() {
                   )}
                 </button>
               </div>
-                <button
-                  onClick={handleLoadDemo}
-                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all duration-200"
-                  style={{ borderColor: 'rgba(245,158,11,0.4)', color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)' }}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.18)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.08)'; }}
-                  title="加载演示数据并立即展示示例诊断报告（含纠偏样例与追问按钮演示）"
-                >
-                  <Info size={13} /> 📋 一键加载演示结果（含纠偏样例）
-                </button>
                 {/* 演示员向评委演示"AI 报告漏报/编造数值时，系统级计算内核自动纠偏"——黄色按钮区别于绿色"通过"样例 */}
                 <button
                   onClick={handleLoadCorrectedDemo}

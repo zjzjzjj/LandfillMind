@@ -107,7 +107,7 @@
       "key_thresholds": {
         "slope_stability_safety_factor_Fs": {
           "normal_operating": "Fs >= 1.30",
-          "seismic": "Fs >= 1.20"
+          "seismic": "Fs >= 1.15（表6.1.4 一级；二级1.10/三级1.05）"
         },
         "leachate_drainage_layer_thickness_mm": {
           "annual_rainfall_gt_800mm": ">= 500",
@@ -135,7 +135,7 @@
         }
       },
       "key_clauses_relevant_to_landfill_monitoring": {
-        "slope_stability": "第 6 章填埋场稳定，规定 Fs >= 1.30（运行期）、Fs >= 1.20（地震期）。",
+        "slope_stability": "第 6 章填埋场稳定，规定 Fs >= 1.30（运行期）、地震工况按表6.1.4 分档：一级 >= 1.15（二级 1.10 / 三级 1.05）。",
         "leachate": "第 4 章填埋场渗流及渗沥液水位控制；导排层厚度、水头、材料粒径及渗透系数；中间盲沟与抽排竖井设计参数。",
         "gas": "4.6 节填埋气收集及控制措施；与 CJJ 133-2019 配套使用。",
         "groundwater": "第 9 章填埋场岩土工程安全监测：9.2 渗沥液水位监测（水位管+剖面沉降仪+水位计联合测定）；9.3 表面水平位移；9.4 深层水平位移（测斜管+测斜仪）；9.5 堆体沉降监测；9.6 填埋气压监测。"
@@ -538,7 +538,7 @@
   "ai_agent_injection_ready_fields": {
     "fs_safety_factor": {
       "normal": 1.30,
-      "seismic": 1.20,
+      "seismic": 1.15,
       "source": "CJJ 176-2012 第 6 章"
     },
     "methane_alarm_thresholds": {
