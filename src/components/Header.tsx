@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Agent, ModelOption } from '../types';
 import type { Theme } from '../hooks/useTheme';
 import type { Session } from '../types';
+import logoImg from '../assets/logo/landfillmind-logo.png';
 
 interface HeaderProps {
   isSettingsPage: boolean; sidebarOpen: boolean; theme: Theme;
@@ -31,7 +32,7 @@ export function Header({ sidebarOpen, theme, currentSession, currentAgent, model
       </div>
       <button onClick={onToggleSidebar} className="p-1.5 rounded-lg transition-all duration-150" style={{ color: 'var(--text-secondary)' }} onMouseEnter={e => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(0,240,255,0.08)'; }} onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }} aria-label="切换侧边栏"><Menu size={18} /></button>
       <button onClick={() => navigate('/')} className="flex items-center gap-2 mr-2 cursor-pointer transition-opacity duration-200 hover:opacity-80" style={{ background: 'transparent', border: 'none', padding: 0 }}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-sm" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: '#060a13', boxShadow: '0 0 12px rgba(0,240,255,0.3)' }}>智</div>
+        <img src={logoImg} alt="LandfillMind" className="w-7 h-7 object-contain" style={{ filter: 'drop-shadow(0 0 6px rgba(99,154,78,0.3))' }} />
         <span className="font-semibold text-sm tracking-tight neon-text" style={{ color: 'var(--primary)' }}>LandfillMind</span>
       </button>
       {currentAgent && <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,240,255,0.06)', color: 'var(--primary)', border: '1px solid rgba(0,240,255,0.15)' }}><Bot size={13} /><span>{currentAgent.name}</span></div>}

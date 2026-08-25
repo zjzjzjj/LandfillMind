@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Settings, Stethoscope, Calculator, MessageCircle, BrainCircuit, X, Boxes, Shield, FlaskConical } from 'lucide-react';
+import logoImg from '../assets/logo/landfillmind-logo.png';
 import type { Agent, Session } from '../types';
 
 interface SidebarProps { sessions: Session[]; currentSessionId: string | null; isSettingsPage: boolean; isDiagnosePage: boolean; isDesignPage: boolean; isMultiAgentPage: boolean; isSimulatorPage: boolean; isOgsSimPage: boolean; sidebarOpen: boolean; agents: Agent[]; getAgent: (id: string) => Agent | undefined; onNewChat: () => void; onSelectSession: (sessionId: string) => void; onDeleteSession: (sessionId: string) => void; onOpenSettings: () => void; onOpenDiagnose: () => void; onOpenDesign: () => void; onOpenMultiAgent: () => void; onOpenSimulator: () => void; onOpenOgsSim: () => void; onOpenAdmin: () => void; }
@@ -38,7 +39,7 @@ export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnose
     <aside className="flex flex-col flex-shrink-0 overflow-hidden relative" style={{ width: 'var(--sidebar-width)', backgroundColor: 'rgba(13,21,37,0.9)', backdropFilter: 'blur(16px)', borderRight: '1px solid var(--border)' }}>
       <div className="absolute top-0 right-0 w-[1px] h-full overflow-hidden pointer-events-none"><div className="absolute inset-x-0 h-1/4" style={{ background: 'linear-gradient(180deg, transparent, rgba(0,240,255,0.15), transparent)', animation: 'scan-sweep 4s ease-in-out infinite' }} /></div>
       <button onClick={() => navigate('/')} className="flex items-center gap-2.5 px-4 shrink-0 cursor-pointer transition-opacity duration-200 hover:opacity-80" style={{ height: 'var(--header-height)', borderBottom: '1px solid var(--border)', background: 'transparent', border: 'none', width: '100%', textAlign: 'left' }}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-sm shrink-0" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: '#060a13', boxShadow: '0 0 12px rgba(0,240,255,0.3)' }}>智</div>
+        <img src={logoImg} alt="LandfillMind" className="w-8 h-8 shrink-0 rounded-md object-contain" style={{ filter: 'drop-shadow(0 0 6px rgba(99,154,78,0.3))' }} />
         <div className="flex flex-col min-w-0">
           <span className="text-sm font-semibold leading-tight truncate" style={{ color: 'var(--text-primary)' }}>LandfillMind</span>
           <span className="text-[10px] leading-tight font-mono" style={{ color: 'var(--primary)', opacity: 0.6 }}>Smart Monitor v4.2</span>
