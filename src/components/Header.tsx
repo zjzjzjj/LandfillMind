@@ -1,5 +1,6 @@
 import { Moon, Sun, Menu, ChevronDown, Bot, Zap } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Agent, ModelOption } from '../types';
 import type { Theme } from '../hooks/useTheme';
 import type { Session } from '../types';
@@ -14,6 +15,7 @@ interface HeaderProps {
 export function Header({ sidebarOpen, theme, currentSession, currentAgent, models, selectedModel, onModelChange, onToggleSidebar, onToggleTheme }: HeaderProps) {
   const [modelOpen, setModelOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (dropRef.current && !dropRef.current.contains(e.target as Node)) setModelOpen(false); };
@@ -28,10 +30,10 @@ export function Header({ sidebarOpen, theme, currentSession, currentAgent, model
         <div className="absolute inset-y-0 w-1/3 animate-scan-sweep" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,240,255,0.4), transparent)' }} />
       </div>
       <button onClick={onToggleSidebar} className="p-1.5 rounded-lg transition-all duration-150" style={{ color: 'var(--text-secondary)' }} onMouseEnter={e => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(0,240,255,0.08)'; }} onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }} aria-label="切换侧边栏"><Menu size={18} /></button>
-      <div className="flex items-center gap-2 mr-2">
+      <button onClick={() => navigate('/')} className="flex items-center gap-2 mr-2 cursor-pointer transition-opacity duration-200 hover:opacity-80" style={{ background: 'transparent', border: 'none', padding: 0 }}>
         <div className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-sm" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: '#060a13', boxShadow: '0 0 12px rgba(0,240,255,0.3)' }}>智</div>
         <span className="font-semibold text-sm tracking-tight neon-text" style={{ color: 'var(--primary)' }}>LandfillMind</span>
-      </div>
+      </button>
       {currentAgent && <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,240,255,0.06)', color: 'var(--primary)', border: '1px solid rgba(0,240,255,0.15)' }}><Bot size={13} /><span>{currentAgent.name}</span></div>}
       {currentSession && <span className="text-sm truncate flex-1 min-w-0" style={{ color: 'var(--text-secondary)' }}>{currentSession.title}</span>}
       <div className="flex-1" />
