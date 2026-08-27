@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, RotateCcw, Camera, FileDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Boxes, RotateCcw, Camera, FileDown, MessageCircle, Link2 } from 'lucide-react';
 // 常量/类型从纯模块 geo.ts 拿（不拉入 three.js）
 import { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite } from '../components/LandfillScene3D/geo';
 import type { GeoParams, LandfillApi } from '../components/LandfillScene3D/geo';
@@ -8,6 +9,24 @@ const LandfillScene3D = lazy(() => import('../components/LandfillScene3D'));
 import { buildSimSnapshotMarkdown, downloadDataUrl, downloadJSON, downloadText, timestampName } from '../utils/exporter';
 
 const STORAGE_KEY = 'sim-geo-v2'; // v2: scale factor 范围重构（v1 的 10-60 m 工程值作废）
+
+/** 跨页联动信封：AI 快诊 / 稳定化计算 / 专家对话 → 3D 场景 */
+export interface SceneLink {
+  kind: 'ogs';
+  scenario: string;
+  scenarioName?: string;
+  timeSeries: Array<{ varName?: string; name?: string; points: { t: number; v: number }[] }>;
+  ts: number;
+}
+export const SCENE_OGS_KEY = 'scene-ogs';
+export function readSceneLink(): SceneLink | null {
+  try {
+    const raw = sessionStorage.getItem(SCENE_OGS_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(SCENE_OGS_KEY); // 读一次即消费
+    return JSON.parse(raw) as SceneLink;
+  } catch { return null; }
+}
 
 // slider 范围 = geo.ts clampGeo 的真实 min/max（scale factor，无量纲）
 // 显示层在末尾标注等效工程值（基于 DEFAULT_GEO 的基准量）
@@ -32,10 +51,45 @@ export default function SimulatorPage() {
   const sceneApi = useRef<LandfillApi | null>(null);
   const canvasWrap = useRef<HTMLDivElement>(null);
   const [canvasHeight, setCanvasHeight] = useState(640);
+  const [linkInfo, setLinkInfo] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(geo)); } catch {}
   }, [geo]);
+
+  // 消费跨页联动：AI 快诊 / 稳定化计算 / 专家对话跳转过来时注入场景
+  useEffect(() => {
+    const link = readSceneLink();
+    if (!link) return;
+    let tries = 0;
+    // 场景懒加载 + 重建是异步的，轮询等 apiRef 就绪
+    const timer = setInterval(() => {
+      tries++;
+      if (sceneApi.current) {
+        clearInterval(timer);
+        sceneApi.current.applyOgsResult(link.scenario, link.timeSeries ?? []);
+        setLinkInfo(`已注入${link.scenarioName ?? '稳定化计算'}结果：${link.scenario === 'settlement' ? '堆体按沉降时程可视化下沉（放大 60×）' : '火炬按产气强度增强'}`);
+        setTimeout(() => setLinkInfo(null), 10000);
+      } else if (tries > 40) {
+        clearInterval(timer);
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 「询问 AI」：把当前场景参数 + 联动状态打包进对话预填
+  const askAi = () => {
+    const q = [
+      '【来自 3D 场景的提问】',
+      `当前三维填埋场参数：堆体高度 ${geo.pileHeight.toFixed(2)}×、谷底宽度 ${geo.valleyWidth.toFixed(2)}×、坝高 ${geo.damHeight.toFixed(2)}×、导气井间距 ${geo.gasWellSpacing.toFixed(2)}×、调节池容积 ${geo.pondVolume.toFixed(2)}×（均为相对默认工况的缩放系数）。`,
+      `估算库容 ${estimates.volumeWanM3} 万 m³，占地 ${estimates.areaHm2} hm²。`,
+      linkInfo ? `（场景已注入：${linkInfo}）` : '',
+      '请结合这些参数，从边坡稳定、渗滤液、填埋气收集三方面给出工程要点。',
+    ].filter(Boolean).join('\n');
+    try { sessionStorage.setItem('chat-prefill', q); } catch {}
+    navigate('/chat/new');
+  };
 
   useEffect(() => {
     const el = canvasWrap.current;
@@ -153,10 +207,26 @@ export default function SimulatorPage() {
           <div ref={canvasWrap} className="flex-1 min-h-0 overflow-hidden">
             <LandfillScene3D height={canvasHeight} geoParams={geo} apiRef={sceneApi} />
           </div>
+          {linkInfo && (
+            <div className="shrink-0 px-5 py-2 border-b flex items-center gap-2 text-[11px]"
+                 style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
+              <Link2 size={12} /> {linkInfo}
+            </div>
+          )}
           <div className="shrink-0 px-5 py-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
             <span className="text-[11px] font-semibold mr-auto" style={{ color: 'var(--text-muted)' }}>
               库容 {estimates.volumeWanM3} 万 m³ · 占地 {estimates.areaHm2} hm²
             </span>
+            <button
+              onClick={askAi}
+              className="text-[11px] px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-colors"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              title="把当前场景参数带入专家问答"
+            >
+              <MessageCircle size={12} /> 询问 AI
+            </button>
             <button
               onClick={capturePng}
               className="text-[11px] px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-colors"

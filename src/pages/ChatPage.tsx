@@ -149,6 +149,24 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
                     {Array.isArray(ogsResult.timeSeries) && ogsResult.timeSeries.length > 0
                       ? ` · 时程输出 ${ogsResult.timeSeries.length} 组` : ''}
                   </p>
+                  {ogsResult.ok && (ogsResult.scenario === 'settlement' || ogsResult.scenario === 'gas-production') && (
+                    <button
+                      onClick={() => {
+                        try {
+                          sessionStorage.setItem('scene-ogs', JSON.stringify({
+                            kind: 'ogs', scenario: ogsResult.scenario, scenarioName: ogsResult.scenarioName,
+                            timeSeries: ogsResult.timeSeries, ts: Date.now(),
+                          }));
+                        } catch { /* ignore */ }
+                        window.open('/3d-simulator', '_blank');
+                      }}
+                      className="text-[10px] px-2.5 py-1 rounded-full border transition-colors"
+                      style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                      title={ogsResult.scenario === 'settlement' ? '沉降时程驱动 3D 堆体下沉' : '产气强度驱动 3D 火炬'}
+                    >
+                      🏔 在 3D 中查看
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -28,12 +28,19 @@ export function ResultInterpretation({
 }: ResultInterpretationProps) {
   const [animated, setAnimated] = useState(0);
 
+  // 小数位自适应：|value|<0.01 用科学计数法位数，否则保留 2~6 位有效小数
+  const decimals = value === 0 ? 2
+    : Math.abs(value) >= 100 ? 1
+    : Math.abs(value) >= 1 ? 2
+    : Math.min(9, Math.max(2, Math.ceil(-Math.log10(Math.abs(value))) + 2));
+  const fmtNum = (v: number) => v.toFixed(decimals);
+
   useEffect(() => {
     const start = performance.now();
     const dur = 800;
     function tick(now: number) {
       const p = Math.min((now - start) / dur, 1);
-      setAnimated(Math.round((1 - Math.pow(1 - p, 3)) * value));
+      setAnimated((1 - Math.pow(1 - p, 3)) * value);
       if (p < 1) requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
@@ -56,7 +63,7 @@ export function ResultInterpretation({
       </div>
       <div className="px-4 py-3">
         <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold font-mono" style={{ color: current.color }}>{animated}</span>
+          <span className="text-3xl font-bold font-mono" style={{ color: current.color }}>{fmtNum(animated)}</span>
           <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{unit}</span>
         </div>
       </div>

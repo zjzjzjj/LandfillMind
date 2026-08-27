@@ -1,5 +1,5 @@
 /**
- * LandfillMind · 计算中心 v4.4（简洁 2 栏布局）
+ * LandfillMind · 计算中心 v4.6（过程曲线 + 模块联动）
  *
  * 布局：左 240px 计算器列表 + 右 主区（单列流式）
  *   - 顶部条：标题 + 预设切换 + 立即计算按钮
@@ -12,7 +12,7 @@
  * 主计算手动触发（"立即计算"按钮）；敏感性/蒙特卡洛/成本等辅助计算用 debounce
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   Calculator, Search, Sliders, GitCompare, Activity,
   ChevronRight, FileDown, RotateCcw, FileText, Sparkles,
@@ -24,10 +24,70 @@ import {
 } from '../utils/exporter';
 import { ResultInterpretation } from '../components/ResultInterpretation';
 import { CalculationAnimation } from '../components/CalculationAnimation';
-import { FeedbackTrendChart } from '../components/Charts';
 import { SafetyFactorGauge } from '../components/SafetyFactorGauge';
 import { HistogramChart } from '../components/HistogramChart';
+import TimeSeriesChart, { seriesColor } from '../components/TimeSeriesChart';
 import { PRESETS, PRESET_LABELS, applyPreset, suggestVaryParam, estimateCost, type PresetName } from '../utils/calcPresets';
+
+/** 联动跳转小按钮 */
+function LinkChip({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-[10px] px-2 py-1 rounded-full border transition-colors"
+      style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** 敏感性分析专用曲线：X=参数取值，Y=结果值；标注基准点与规范参考线（CSS 变量自适应深浅主题） */
+function SensitivityCurve({ xs, ys, baseX, baseValue, unit, refLine, height = 180 }: {
+  xs: number[]; ys: number[]; baseX: number; baseValue: number; unit?: string; refLine?: number; height?: number;
+}) {
+  const W = 640, H = height, PAD_L = 52, PAD_R = 14, PAD_T = 12, PAD_B = 26;
+  if (!xs.length || xs.length !== ys.length) return null;
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys, refLine ?? Infinity), yMax = Math.max(...ys, refLine ?? -Infinity);
+  const xR = xMax - xMin || 1, yR = yMax - yMin || 1;
+  const X = (x: number) => PAD_L + (x - xMin) / xR * (W - PAD_L - PAD_R);
+  const Y = (v: number) => H - PAD_B - (v - yMin) / yR * (H - PAD_T - PAD_B);
+  const path = xs.map((x, i) => `${i ? 'L' : 'M'}${X(x).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ');
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => yMin + f * yR);
+  const xTickIdx = [0, Math.floor(xs.length / 2), xs.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="敏感性曲线">
+      {yTicks.map((v, i) => (
+        <g key={`y${i}`}>
+          <line x1={PAD_L} y1={Y(v)} x2={W - PAD_R} y2={Y(v)} stroke="var(--border)" strokeOpacity="0.5" strokeDasharray="2,3" />
+          <text x={PAD_L - 5} y={Y(v) + 3} textAnchor="end" fontSize="9" fill="var(--text-muted)">{v.toFixed(Math.abs(yR) < 0.1 ? 3 : 1)}</text>
+        </g>
+      ))}
+      {xTickIdx.map((i) => (
+        <text key={`x${i}`} x={X(xs[i])} y={H - PAD_B + 13} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{xs[i].toFixed(2)}</text>
+      ))}
+      {refLine !== undefined && refLine >= yMin && refLine <= yMax && (
+        <g>
+          <line x1={PAD_L} y1={Y(refLine)} x2={W - PAD_R} y2={Y(refLine)} stroke="#dc2626" strokeWidth="1" strokeDasharray="6,4" opacity="0.7" />
+          <text x={W - PAD_R} y={Y(refLine) - 4} textAnchor="end" fontSize="9" fill="#dc2626">限值 {refLine}</text>
+        </g>
+      )}
+      <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="var(--border)" />
+      <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="var(--border)" />
+      <path d={path} fill="none" stroke="#06b6d4" strokeWidth="2" />
+      {xs.map((x, i) => <circle key={i} cx={X(x)} cy={Y(ys[i])} r="2.5" fill="#06b6d4" />)}
+      {/* 基准点 */}
+      <circle cx={X(baseX)} cy={Y(baseValue)} r="4.5" fill="#f59e0b" stroke="var(--bg-surface)" strokeWidth="2" />
+      <text x={X(baseX)} y={Y(baseValue) - 9} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#f59e0b">
+        {baseValue.toFixed(2)}{unit ? ' ' + unit : ''}
+      </text>
+      <text x={W - PAD_R} y={H - PAD_B + 24} textAnchor="end" fontSize="8.5" fill="var(--text-muted)">参数取值 →</text>
+    </svg>
+  );
+}
 
 // ============================================================
 // 计算器清单
@@ -225,6 +285,10 @@ function saveParams(calcId: string, params: Record<string, number | string>) {
 export default function DesignPage() {
   // ============= 状态 =============
   const [selected, setSelected] = useState<string>('slopeFs');
+  // 聚合视图（对比/蒙特卡洛）跟随最近使用过的数值型计算器（字符串值计算器服务端无法采样，排除）
+  const AGGREGATE_IDS = new Set([COMPARE_ID, MONTE_ID, COST_ID]);
+  const STRING_VALUE_CALCS = new Set(['hdpeCheck', 'soilScreen']);
+  const [lastNumericCalc, setLastNumericCalc] = useState<string>('slopeFs');
   const [preset, setPreset] = useState<PresetName>('standard');
   const [params, setParams] = useState<Record<string, number | string>>(() => defaultParams('slopeFs'));
   const [result, setResult] = useState<CalcResult | null>(null);
@@ -310,12 +374,17 @@ export default function DesignPage() {
       .catch(() => setSensitivity(null));
   }, [selected, params, varyParam, calcTrigger]);
 
+  // 记录最近使用的数值型计算器（供聚合视图跟随）
+  useEffect(() => {
+    if (!AGGREGATE_IDS.has(selected) && !STRING_VALUE_CALCS.has(selected)) setLastNumericCalc(selected);
+  }, [selected]);
+
   // 场景对比
   useEffect(() => {
     if (selected !== COMPARE_ID) return;
     if (debouncedCompareScenarios.length < 2) return;
     const baseParams = debouncedCompareScenarios[0].params;
-    const sampleId = Object.keys(PARAMS_MAP).find(id => PARAMS_MAP[id].every(d => baseParams[d.name] !== undefined)) ?? 'slopeFs';
+    const sampleId = guessCalcId(baseParams);
     fetch('/api/calc/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -330,23 +399,30 @@ export default function DesignPage() {
   useEffect(() => {
     if (selected !== MONTE_ID) return;
     if (debouncedMonteParams.length === 0) return;
-    const baseParams = applyPreset('slopeFs', preset);
+    const calcId = lastNumericCalc;
+    const baseParams = applyPreset(calcId, preset);
     const paramDist: Record<string, { mean: number; std: number }> = {};
     debouncedMonteParams.forEach(({ param, std }) => {
       const v = baseParams[param];
       if (typeof v === 'number') paramDist[param] = { mean: v, std };
     });
+    const payload: Record<string, unknown> = { name: calcId, params: baseParams, paramDist, iterations: 500 };
+    // 阈值：取该计算器阈值表中红色档上限；无阈值表则不传（服务端跳过失败概率）
+    const redMax = THRESHOLDS[calcId]?.find(t => t.color === '#dc2626')?.max;
+    if (redMax !== undefined) payload.threshold = { op: '<', value: redMax };
     fetch('/api/calc/montecarlo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'slopeFs', params: baseParams, paramDist, threshold: { op: '<', value: 1.30 }, iterations: 500 }),
+      body: JSON.stringify(payload),
     })
       .then(r => r.json())
       .then(d => setMonteResult(d))
       .catch(() => setMonteResult(null));
-  }, [selected, debouncedMonteParams, preset]);
+  }, [selected, debouncedMonteParams, preset, lastNumericCalc]);
 
   // ============= 工具 =============
+  const guessCalcId = (params: Record<string, number | string>): string =>
+    Object.keys(PARAMS_MAP).find(id => PARAMS_MAP[id].every(d => params[d.name] !== undefined)) ?? lastNumericCalc;
   const updateParam = (name: string, value: number | string) => {
     setParams(prev => ({ ...prev, [name]: value }));
   };
@@ -421,7 +497,7 @@ export default function DesignPage() {
             <Calculator size={15} style={{ color: 'var(--primary)' }} />
             <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>计算中心</span>
             <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded font-mono" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-              v4.4
+              v4.6
             </span>
           </div>
           <div className="relative">
@@ -526,9 +602,11 @@ export default function DesignPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-6 py-6 pb-24 space-y-5">
             {selected === COMPARE_ID ? (
-              <CompareModeFull scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} />
+              <CompareModeFull scenarios={compareScenarios} setScenarios={setCompareScenarios} result={compareResult} calcName={guessCalcId(compareScenarios[0]?.params ?? {})} />
             ) : selected === MONTE_ID ? (
               <MonteCarloFull
+                calcId={lastNumericCalc}
+                paramKeys={(PARAMS_MAP[lastNumericCalc] ?? []).filter(p => p.type !== 'select' && p.default !== undefined).map(p => p.name)}
                 params={monteParams} setParams={setMonteParams}
                 preset={preset} result={monteResult}
               />
@@ -605,6 +683,7 @@ function SingleModeFull(props: {
   onExportJson: () => void;
 }) {
   const { selected, params, result, loading, varyParam, setVaryParam, sensitivity, sensitivityData, formulaSteps, showFormula, setShowFormula, updateParam, onExportMd, onExportHtml, onExportJson } = props;
+  const navigate = useNavigate();
   const defs = PARAMS_MAP[selected] ?? [];
   const isFs = selected === 'slopeFs';
   const FsValue = isFs && result && typeof result.value === 'number' ? result.value : null;
@@ -620,6 +699,19 @@ function SingleModeFull(props: {
               <ParamField key={p.name} param={p} value={params[p.name]} onChange={v => updateParam(p.name, v)} />
             ))}
           </div>
+          <button
+            onClick={() => {
+              const init: Record<string, number | string> = {};
+              defs.forEach(p => { if (p.default !== undefined) init[p.name] = p.default; });
+              Object.keys(init).forEach(k => updateParam(k, init[k]));
+            }}
+            className="mt-3 w-full py-1.5 rounded-lg text-[11px] border flex items-center justify-center gap-1 transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+          >
+            <RotateCcw size={11} /> 恢复默认参数
+          </button>
         </Card>
 
         {result && (
@@ -634,9 +726,9 @@ function SingleModeFull(props: {
                 )}
                 <ResultExtras extra={result.extra} />
               </div>
-            ) : thresholds ? (
+            ) : thresholds && typeof result.value === 'number' ? (
               <ResultInterpretation
-                value={typeof result.value === 'number' ? result.value : 0}
+                value={result.value}
                 unit={result.unit ?? ''}
                 label={CALC_LIST.find(c => c.id === selected)?.name ?? '计算结果'}
                 thresholds={thresholds}
@@ -646,7 +738,8 @@ function SingleModeFull(props: {
             ) : (
               <PlainResult result={result} />
             )}
-            {thresholds && <ResultExtras extra={result.extra} />}
+            {/* extras：isFs 分支已内嵌；阈值分支的 ResultInterpretation 不含 extras，在此补渲染；字符串值走 PlainResult 已内嵌 */}
+            {thresholds && !isFs && typeof result.value === 'number' && result.value !== undefined && <ResultExtras extra={result.extra} />}
           </Card>
         )}
 
@@ -660,8 +753,64 @@ function SingleModeFull(props: {
         )}
       </div>
 
-      {/* 3. 敏感性分析（仅 slopeFs 显著，其他计算器隐藏） */}
-      {isFs && (
+      {/* 3. 过程曲线（后端 series 字段：沉降时程 / LandGEM 曲线 / 对流-弥散剖面 / 渗滤液月产量） */}
+      {result?.series && result.series.length > 0 && (
+        <Card title="过程曲线" icon={<TrendingUp size={13} />}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {result.series.map((s: { name: string; unit?: string; varName?: string; points: { t: number; v: number }[] }) => (
+              <div key={s.name} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
+                <p className="text-[11px] font-semibold mb-1 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: seriesColor(s.varName) }} />
+                  {s.name}{s.unit ? `（${s.unit}）` : ''}
+                </p>
+                <TimeSeriesChart series={s} height={160} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* 3.5 联动：结果 → 其它模块 */}
+      {result && result.ok !== false && (
+        <div className="flex flex-wrap items-center gap-2 -mt-2">
+          <span className="text-[10px] mr-1" style={{ color: 'var(--text-muted)' }}>联动：</span>
+          {(selected === 'lfgYield') && (
+            <LinkChip label="🌐 在稳定化计算中细化（ADM1 全组分）" onClick={() => {
+              try {
+                sessionStorage.setItem('ogs-prefill', JSON.stringify({
+                  scenario: 'gas-production',
+                  params: { wasteMass: params.M ?? 500, simYears: params.year ?? 20 },
+                }));
+              } catch { /* ignore */ }
+              navigate('/ogs-sim');
+            }} />
+          )}
+          {(selected === 'settlementHyper') && (
+            <LinkChip label="🏔 OGS 沉降时程（日分辨率）" onClick={() => {
+              try {
+                sessionStorage.setItem('ogs-prefill', JSON.stringify({ scenario: 'settlement', params: {} }));
+              } catch { /* ignore */ }
+              navigate('/ogs-sim');
+            }} />
+          )}
+          {result.series && result.series.length > 0 && (
+            <LinkChip label="📈 曲线数据问专家" onClick={() => {
+              const lines = [
+                `【计算中心 · ${CALC_LIST.find(c => c.id === selected)?.name}】`,
+                `结果：${typeof result.value === 'number' ? result.value + ' ' + (result.unit ?? '') : result.value}`,
+                result.formula ? `公式：${result.formula}` : '',
+                '',
+                '请解释该结果的工程含义，并讨论参数不确定性对结论的影响。',
+              ].filter(Boolean).join('\n');
+              try { sessionStorage.setItem('chat-prefill', lines); } catch { /* ignore */ }
+              navigate('/chat/new');
+            }} />
+          )}
+        </div>
+      )}
+
+      {/* 4. 敏感性分析（对所有数值型计算器开放） */}
+      {typeof result?.value === 'number' && defs.some(p => typeof params[p.name] === 'number') && (
         <Card title="敏感性分析" icon={<TrendingUp size={13} />}>
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>变分参数：</span>
@@ -679,12 +828,20 @@ function SingleModeFull(props: {
               </button>
             ))}
           </div>
-          {sensitivityData.length > 0 ? (
+          {sensitivity ? (
             <>
-              <FeedbackTrendChart data={sensitivityData} height={180} />
+              <SensitivityCurve
+                xs={sensitivity.xs}
+                ys={sensitivity.ys}
+                baseX={sensitivity.baseX}
+                baseValue={sensitivity.baseValue}
+                unit={typeof result.value === 'number' ? (result.unit ?? '') : ''}
+                refLine={isFs ? 1.30 : undefined}
+                height={180}
+              />
               <div className="mt-2 text-[10px] font-mono flex items-center gap-3" style={{ color: 'var(--text-muted)' }}>
-                <span>基准：{sensitivity?.baseX?.toFixed(2)} → Fs = {sensitivity?.baseValue?.toFixed(2)}</span>
-                {sensitivity && sensitivity.baseValue && sensitivity.baseValue < 1.3 && (
+                <span>基准：{sensitivity?.baseX?.toFixed(2)} → {typeof result.value === 'number' ? result.value.toFixed(2) : ''}{isFs ? ' (Fs)' : ''}</span>
+                {isFs && sensitivity && sensitivity.baseValue && sensitivity.baseValue < 1.3 && (
                   <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}>
                     <ShieldAlert size={9} className="inline mr-0.5" />低于规范
                   </span>
@@ -780,6 +937,12 @@ function PlainResult({ result }: { result: CalcResult }) {
         <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{result.unit}</span>
       </div>
       <p className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{result.analysis}</p>
+      {result.formula && (
+        <div className="mt-2 rounded-lg px-3 py-2 text-[11px] font-mono"
+             style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--primary)' }}>
+          ƒ {result.formula}
+        </div>
+      )}
       {result.ref && (
         <div className="mt-2 pt-2 border-t text-[10px] font-mono" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
           规范：{result.ref}
@@ -844,10 +1007,11 @@ function Card({ title, icon, hint, collapsible, expanded, onToggle, children }: 
 // ============================================================
 // 场景对比（全宽视图）
 // ============================================================
-function CompareModeFull({ scenarios, setScenarios, result }: {
+function CompareModeFull({ scenarios, setScenarios, result, calcName }: {
   scenarios: { label: string; params: Record<string, number | string> }[];
   setScenarios: (s: { label: string; params: Record<string, number | string> }[]) => void;
   result: any;
+  calcName?: string;
 }) {
   const update = (i: number, field: 'label' | string, value: string) => {
     setScenarios(scenarios.map((s, idx) => {
@@ -864,7 +1028,7 @@ function CompareModeFull({ scenarios, setScenarios, result }: {
 
   return (
     <>
-      <Card title="场景对比（统一用 slopeFs）" icon={<GitCompare size={13} />} hint={`${scenarios.length} 个场景自动对比`}>
+      <Card title={`场景对比 · ${calcName ? (CALC_LIST.find(c => c.id === calcName)?.name ?? calcName) : '自动识别'}`} icon={<GitCompare size={13} />} hint={`${scenarios.length} 个场景自动对比 · 跟随最近使用的计算器`}>
         <div className="space-y-3">
           {scenarios.map((sc, i) => (
             <div key={i} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-base)' }}>
@@ -937,11 +1101,13 @@ function CompareModeFull({ scenarios, setScenarios, result }: {
 // ============================================================
 // 蒙特卡洛（全宽视图）
 // ============================================================
-function MonteCarloFull({ params, setParams, preset, result }: {
+function MonteCarloFull({ params, setParams, preset, result, calcId = 'slopeFs', paramKeys = ['H', 'beta', 'gamma', 'c', 'phi'] }: {
   params: { param: string; std: number }[];
   setParams: (p: { param: string; std: number }[]) => void;
   preset: PresetName;
   result: any;
+  calcId?: string;
+  paramKeys?: string[];
 }) {
   const add = () => setParams([...params, { param: 'beta', std: 1 }]);
   const remove = (i: number) => setParams(params.filter((_, idx) => idx !== i));
@@ -950,9 +1116,9 @@ function MonteCarloFull({ params, setParams, preset, result }: {
   };
   return (
     <>
-      <Card title="蒙特卡洛风险评估" icon={<Activity size={13} />} hint={`预设：${PRESET_LABELS[preset].name} · 阈值 Fs<1.30`}>
+      <Card title={`蒙特卡洛风险评估 · ${CALC_LIST.find(c => c.id === calcId)?.name ?? calcId}`} icon={<Activity size={13} />} hint={`预设：${PRESET_LABELS[preset].name}`}>
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-          给输入参数加正态扰动，模拟 500 次，看 Fs 分布与失败概率。
+          给输入参数加正态扰动，模拟 500 次，看结果分布与失败概率（跟随最近使用的计算器）。
         </p>
         <div className="space-y-2">
           {params.map((p, i) => (
@@ -960,7 +1126,7 @@ function MonteCarloFull({ params, setParams, preset, result }: {
               <select value={p.param} onChange={e => update(i, 'param', e.target.value)}
                       className="text-xs px-2 py-1 rounded border font-mono"
                       style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
-                {['H', 'beta', 'gamma', 'c', 'phi'].map(k => <option key={k} value={k}>{k}</option>)}
+                {(paramKeys.includes(p.param) ? paramKeys : [...paramKeys, p.param]).map(k => <option key={k} value={k}>{k}</option>)}
               </select>
               <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>σ =</span>
               <input type="number" value={p.std} step="any" min="0"

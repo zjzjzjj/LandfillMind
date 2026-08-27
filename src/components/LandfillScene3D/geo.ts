@@ -86,4 +86,6 @@ export interface LandfillApi {
   capturePng(): string | null;
   setHotspotsVisible(v: boolean): void;
   setLiveLabelsVisible(v: boolean): void;
+  /** 稳定化计算联动：把 OGS 场景结果（gas-production / settlement）注入场景 */
+  applyOgsResult(scenario: string, series: Array<{ varName?: string; points: { t: number; v: number }[] }>): void;
 }

@@ -182,6 +182,8 @@ interface MonitoringSnapshot {
   groundwater: number;    // m
   fs: number;             // 边坡 Fs
   updatedAt: number;
+  /** 数据来源：demo=演示随机游走；diagnosis=AI 快诊真实结果；ogs=稳定化计算结果 */
+  source?: 'demo' | 'diagnosis' | 'ogs';
 }
 const DEFAULT_MONITORING: MonitoringSnapshot = {
   leachateLevel: 0.8,
@@ -189,6 +191,7 @@ const DEFAULT_MONITORING: MonitoringSnapshot = {
   groundwater: 12.5,
   fs: 1.35,
   updatedAt: Date.now(),
+  source: 'demo',
 };
 
 // estimateSite / SiteEstimate 已抽到 ./LandfillScene3D/geo.ts（re-export 见文件顶部）
@@ -382,28 +385,37 @@ export default function LandfillScene3D({
   const [showLiveLabels, setShowLiveLabels] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
 
-  // 拉取诊断数据（与 3D 场景联动）
+  // 诊断数据联动：读取 AI 快诊写入的最新结果（DiagnosisPage 保存于 sessionStorage 'diagnosis-latest'）。
+  // 修复：原实现向 /api/diagnose 发送伪造 payload（后端 parseSiteData 不认识 params/contaminants，
+  // 恒返回 risks:[]），且场景 effect 依赖数组不含 diagnosis，导致联动永久失效。
   useEffect(() => {
-    let alive = true;
-    setDiagnosisLoading(true);
-    fetch('/api/diagnose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ params: { H: 20, beta: 35 }, contaminants: [{ name: '氨氮', value: 2.5 }] }),
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then((data: DiagnosisResult | null) => {
-        if (alive && data?.risks) setDiagnosis(data);
-      })
-      .catch(() => {})
-      .finally(() => alive && setDiagnosisLoading(false));
-    return () => { alive = false; };
+    try {
+      const raw = sessionStorage.getItem('diagnosis-latest');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { risks?: RiskItem[]; overallRisk?: string; ts?: number };
+      if (parsed?.risks?.length) {
+        setDiagnosis(prev => ({ ...(prev ?? {}), risks: parsed.risks, overallRisk: parsed.overallRisk } as DiagnosisResult));
+        // 同步实时态势：用诊断值替换随机演示基线
+        const by = (c: string) => parsed.risks!.find(r => r.category === c);
+        const fsRisk = by('边坡'), leaRisk = by('渗滤液'), gasRisk = by('填埋气'), gwRisk = by('地下水');
+        setMonitoring(m => ({
+          ...m,
+          fs: typeof fsRisk?.value === 'number' ? fsRisk.value : m.fs,
+          leachateLevel: typeof leaRisk?.value === 'number' ? Math.min(4, leaRisk.value) : m.leachateLevel,
+          ch4: typeof gasRisk?.value === 'number' ? Math.min(8, gasRisk.value) : m.ch4,
+          groundwater: typeof gwRisk?.value === 'number' ? gwRisk.value : m.groundwater,
+          source: 'diagnosis' as const,
+          updatedAt: Date.now(),
+        }));
+      }
+    } catch { /* 忽略脏数据 */ }
   }, []);
 
-  // 监测数据飘字：演示用每秒轻微扰动（真实部署可接入 SSE / WebSocket）
+  // 监测数据飘字：有真实诊断数据时只做微小抖动（保序），否则演示随机游走
   useEffect(() => {
+    const live = monitoring.source === 'diagnosis';
     const id = setInterval(() => {
-      setMonitoring(prev => ({
+      setMonitoring(prev => live ? prev : ({
         ...prev,
         leachateLevel: Math.max(0.3, Math.min(2.5, prev.leachateLevel + (Math.random() - 0.5) * 0.06)),
         ch4: Math.max(0.5, Math.min(8, prev.ch4 + (Math.random() - 0.5) * 0.18)),
@@ -413,15 +425,17 @@ export default function LandfillScene3D({
       }));
     }, 1800);
     return () => clearInterval(id);
-  }, []);
+  }, [monitoring.source]);
 
-  // 优先级：geoParams prop > diagnosis.site > liveGeo（preset/slider 状态）
+  // 几何参数优先级：geoParams prop > liveGeo（preset/slider 状态）。
+  // 修复：不再把 diagnosis.site（工程量纲：m/°）合入 GeoParams（无量纲缩放 0.5~1.8），
+  // 原先 clampGeo 会把 landfillHeight:25 钳到 1.8，导致模型尺寸畸变。
   // LS4 性能修复：用 useMemo 稳定对象引用（避免 JSON.stringify 每帧重复计算）
   const mergedGeo: GeoParams = useMemo(() => {
-    const base: GeoParams = { ...DEFAULT_GEO, ...(diagnosis?.site as Partial<GeoParams> | undefined ?? {}), ...liveGeo, ...(geoParams ?? {}) };
+    const base: GeoParams = { ...DEFAULT_GEO, ...liveGeo, ...(geoParams ?? {}) };
     return clampGeo(base);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagnosis?.site, liveGeo, geoParams]);
+  }, [liveGeo, geoParams]);
   const geoKey = useMemo(() => JSON.stringify(mergedGeo), [mergedGeo]);
 
   // LS5 性能修复：防抖 geoKey — 用户拖动 slider 时不重建场景，松手 200ms 后才重建
@@ -974,23 +988,23 @@ export default function LandfillScene3D({
       hotspotGroup.add(grp);
       hotspots.push({ group: grp, ring, ringMat, level, pos });
     }
-    // 默认演示热点：与诊断数据无关时也展示一组样例
-    {
+    // 演示热点：仅在没有真实诊断数据时展示样例（修复：原先无条件叠加导致双份热点）
+    if (!diagnosis?.risks?.length) {
       const k = kv(), cap = capY();
       const sample = [
-        { level: 'orange' as const, pos: riskPosition('边坡', k, cap), title: '⚠ 边坡 Fs=1.18' },
-        { level: 'yellow' as const, pos: riskPosition('渗滤液', k, cap), title: '▲ 渗滤液液位' },
-        { level: 'red' as const, pos: riskPosition('填埋气', k, cap), title: '● CH₄ 超限' },
+        { level: 'orange' as const, pos: riskPosition('边坡', k, cap), title: '⚠ 边坡 Fs=1.18（演示）' },
+        { level: 'yellow' as const, pos: riskPosition('渗滤液', k, cap), title: '▲ 渗滤液液位（演示）' },
+        { level: 'red' as const, pos: riskPosition('填埋气', k, cap), title: '● CH₄ 超限（演示）' },
       ];
       sample.forEach(s => addHotspot(s.level, s.pos, s.title));
     }
     // 接入诊断数据：把 risks 转成 hotspot
     if (diagnosis?.risks?.length) {
       const k = kv(), cap = capY();
-      diagnosis.risks.slice(0, 4).forEach(r => {
+      diagnosis.risks.slice(0, 6).forEach(r => {
         const pos = riskPosition(r.category, k, cap);
         const tag = r.level === 'red' ? '●' : r.level === 'orange' ? '⚠' : r.level === 'yellow' ? '▲' : 'ℹ';
-        const title = `${tag} ${r.category} · ${r.value ?? ''}`;
+        const title = `${tag} ${r.category} · ${r.title?.slice(0, 10) ?? r.value ?? ''}`;
         addHotspot(r.level, pos, title);
       });
     }
@@ -1304,6 +1318,9 @@ export default function LandfillScene3D({
     }
 
     // ---------------- 对外 API ----------------
+    // OGS 结果驱动状态（applyOgsResult 写入，animate 循环消费）
+    let ogsSinkMeters = 0;         // 沉降可视化下沉量（已含放大系数）
+    let ogsGasBoost = 0;           // 产气结果 → 火炬额外增量
     apiRef.current = {
       setLayerVisible(layer, visible) { (groups[layer] || []).forEach(o => { o.visible = visible; }); },
       setTransparent,
@@ -1328,6 +1345,23 @@ export default function LandfillScene3D({
       },
       setHotspotsVisible(v) { hotspotGroup.visible = v; },
       setLiveLabelsVisible(v) { liveLabelGroup.visible = v; },
+      /** 稳定化计算联动：产气结果→火炬增强；沉降结果→堆体可视化下沉（放大 60× 并在面板标注） */
+      applyOgsResult(scenario, series) {
+        const find = (name: string) => series.find(s => s.varName === name);
+        if (scenario === 'gas-production') {
+          const rate = find('ch4_rate');
+          const peak = rate ? Math.max(...rate.points.map(p => p.v)) : 0;
+          // 899 万m³/d 峰值 → 额外 1.2；封顶 2
+          ogsGasBoost = Math.min(2, (peak / 900) * 1.2);
+          setMonitoring(m => ({ ...m, ch4: Math.min(8, 3.2 + ogsGasBoost * 2.4), source: 'ogs', updatedAt: Date.now() }));
+        } else if (scenario === 'settlement') {
+          const disp = find('DISPLACEMENT_Y1');
+          const lastM = disp ? Math.abs(disp.points[disp.points.length - 1].v) : 0;
+          // 真实沉降 ~0.02 m 在 1:1 场景中不可见，放大 60×（面板已注明）
+          ogsSinkMeters = Math.min(4, lastM * 60);
+          setMonitoring(m => ({ ...m, source: 'ogs', updatedAt: Date.now() }));
+        }
+      },
     };
     if (externalApiRef) externalApiRef.current = apiRef.current;
 
@@ -1377,13 +1411,23 @@ export default function LandfillScene3D({
       camera.lookAt(ctl.t);
       if (flameParts.flame) {
         const ch4 = monitoringRef.current.ch4;
-        // CH4 越高，火炬越大（0.5..8 → 0.7..2.2）
-        const scale = 0.7 + (ch4 / 8) * 1.5;
+        // CH4 越高，火炬越大（0.5..8 → 0.7..2.2）；稳定化产气结果额外增强
+        const scale = 0.7 + (ch4 / 8) * 1.5 + ogsGasBoost;
         flameParts.flame.scale.set(
           scale * (1 + 0.18 * Math.sin(t * 13)),
           scale * (1 + 0.3 * Math.sin(t * 11) + 0.15 * Math.sin(t * 29)),
           scale,
         );
+      }
+      // 稳定化沉降联动：堆体+覆盖整体缓慢下沉（缓动到目标，直观可见）
+      {
+        const cur = wasteGroup.position.y;
+        const target = -ogsSinkMeters;
+        if (Math.abs(cur - target) > 0.001) {
+          const ny = cur + (target - cur) * Math.min(1, 2.5 * dt);
+          wasteGroup.position.y = ny;
+          coverGroup.position.y = ny;
+        }
       }
       // 风险热点脉冲（呼吸效果）
       hotspots.forEach((hs, i) => {
@@ -1453,7 +1497,7 @@ export default function LandfillScene3D({
       if (externalApiRef) externalApiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height, debouncedGeoKey, timeOfDay]);
+  }, [height, debouncedGeoKey, timeOfDay, diagnosis]);
 
   useEffect(() => { autoRotateRef.current = autoRotate; }, [autoRotate]);
   useEffect(() => { apiRef.current?.setHotspotsVisible?.(showHotspots); }, [showHotspots]);
@@ -1623,8 +1667,13 @@ export default function LandfillScene3D({
           {/* 微型仪表盘（A4）— 右下角实时监测 */}
           <div className="z-20" style={{ ...panelBase, bottom: 12, right: 12, padding: '10px 12px', minWidth: 200, fontSize: 11.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22d3ee', boxShadow: '0 0 6px #22d3ee' }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: monitoring.source === 'demo' ? '#94a3b8' : '#22d3ee', boxShadow: monitoring.source === 'demo' ? 'none' : '0 0 6px #22d3ee' }} />
               <span style={{ color: '#7fd4ff', fontWeight: 600 }}>实时态势 · LF-01</span>
+              <span style={{ marginLeft: 'auto', fontSize: 9.5, padding: '1px 6px', borderRadius: 999,
+                border: '1px solid ' + (monitoring.source === 'demo' ? 'rgba(148,163,184,0.5)' : 'rgba(34,211,238,0.55)'),
+                color: monitoring.source === 'demo' ? '#94a3b8' : '#22d3ee' }}>
+                {monitoring.source === 'diagnosis' ? 'AI 快诊' : monitoring.source === 'ogs' ? '稳定化计算' : '演示值'}
+              </span>
             </div>
             {[
               { l: '边坡 Fs', v: monitoring.fs.toFixed(2), c: monitoring.fs >= 1.30 ? '#10b981' : monitoring.fs >= 1.10 ? '#ea580c' : '#dc2626' },

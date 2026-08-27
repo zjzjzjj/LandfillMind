@@ -81,6 +81,8 @@ export interface CalcResult {
   formula?: string;
   /** v4.5 新增：函数返回的中间变量 / 分解数据，前端 ResultExtras 展示 */
   extra?: Record<string, number | string>;
+  /** v4.6 新增：过程曲线（时间/距离序列），前端共享 TimeSeriesChart 渲染 */
+  series?: Array<{ name: string; unit?: string; varName?: string; points: { t: number; v: number }[] }>;
   [key: string]: unknown;
 }
 

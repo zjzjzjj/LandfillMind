@@ -396,6 +396,15 @@ export default function DiagnosisPage() {
     navigate('/chat/new');
   };
 
+  // 把诊断结果写给 3D 场景（sessionStorage 一次性信封，SimulatorPage 消费）
+  const persistForScene = (r: DiagnosisResult) => {
+    try {
+      sessionStorage.setItem('diagnosis-latest', JSON.stringify({
+        risks: r.risks, overallRisk: r.overallRisk, ts: Date.now(),
+      }));
+    } catch { /* ignore */ }
+  };
+
   // 后端 /api/diagnose 返回 { hazards(含 calc 计算书), report(分章节), overallRisk }，
   // 前端做字段归一化 + 防御性兜底
   const normalizeResult = (raw: any): DiagnosisResult => {
@@ -466,7 +475,9 @@ export default function DiagnosisPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setResult(normalizeResult(data));
+        const normalized = normalizeResult(data);
+        setResult(normalized);
+        persistForScene(normalized);
       } else {
         // 后端异常时使用示例数据兜底，但显式标注，避免评委误以为"✅ 内核复核通过"是真实数据
         console.error('[handleCalc] 后端异常 status=', res.status, '，已加载示例数据用于演示');
@@ -486,6 +497,7 @@ export default function DiagnosisPage() {
   const handleLoadDemo = () => {
     setFormData(DEMO_DATA);
     setResult(DEMO_RESULT);
+    persistForScene(DEMO_RESULT);
     setBackendError({ hasError: false, message: '' });
     // 短暂 toast：显式告知评委当前为演示数据
     setToast('已加载 v4.1.1 演示数据（含纠偏样例）');
@@ -497,6 +509,7 @@ export default function DiagnosisPage() {
   const handleLoadCorrectedDemo = () => {
     setFormData(DEMO_DATA);
     setResult(DEMO_RESULT_CORRECTED);
+    persistForScene(DEMO_RESULT_CORRECTED);
     setBackendError({ hasError: false, message: '' });
     setToast('已触发纠偏演示——AI 报告漏报 / 编造数值被内核捕获');
     setTimeout(() => setToast(''), 2500);
@@ -1040,6 +1053,14 @@ export default function DiagnosisPage() {
                           style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
                       图例：🔴 红=重大  🟠 橙=较大  🟡 黄=一般  🟢 虚线箭头=应急疏散路线
                     </span>
+                    <button
+                      onClick={() => navigate('/3d-simulator')}
+                      className="text-[10px] px-2.5 py-1 rounded-full border flex items-center gap-1 transition-colors"
+                      style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                      title="风险热点已同步到三维场景（无需手动操作）"
+                    >
+                      🏔 在 3D 中查看风险分布
+                    </button>
                   </div>
                 </div>
               )}

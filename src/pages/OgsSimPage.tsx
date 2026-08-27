@@ -8,8 +8,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Loader2, RefreshCw, FlaskConical, ChevronDown, ChevronUp, Zap, TrendingUp, Wind } from 'lucide-react';
+import { Play, Loader2, RefreshCw, FlaskConical, ChevronDown, ChevronUp, Zap, TrendingUp, Wind, Box } from 'lucide-react';
+import TimeSeriesChart, { seriesColor as getColor } from '../components/TimeSeriesChart';
 
 interface OgsParamSpec { key: string; label: string; unit?: string; default: number; min?: number; max?: number; step?: number; hint?: string; }
 interface OgsScenarioMeta { id: string; name: string; description: string; params: OgsParamSpec[]; }
@@ -20,165 +22,6 @@ interface OgsRunResult {
   simulationTime?: string; summary: string; timeSeries: OgsTimeSeries[];
   fileSummaries: Array<{ file: string; min: number; max: number; mean: number; points: number }>;
   error?: string;
-}
-
-/** 格式化数值：大数用万，小数保留精度，极小数用科学计数法 */
-const fmtAxis = (x: number) => {
-  if (!Number.isFinite(x)) return '0';
-  if (x === 0) return '0';
-  const abs = Math.abs(x);
-  if (abs >= 1e4) return (x / 1e4).toFixed(0) + '万';
-  if (abs >= 100) return x.toFixed(0);
-  if (abs >= 1) return x.toFixed(1);
-  if (abs >= 0.01) return x.toFixed(2);
-  if (abs >= 0.001) return x.toFixed(3);
-  // 极小数：用 ×10⁻ⁿ 格式
-  const exp = Math.floor(Math.log10(abs));
-  const mantissa = x / Math.pow(10, exp);
-  const superscript = '⁰¹²³⁴⁵⁶⁷⁸⁹';
-  const expStr = String(Math.abs(exp)).split('').map(d => superscript[parseInt(d)]).join('');
-  return `${mantissa.toFixed(1)}×10${exp < 0 ? '⁻' : ''}${expStr}`;
-};
-
-/** 颜色映射 */
-const CHART_COLORS: Record<string, string> = {
-  ch4_cum: '#3b82f6',    // 蓝
-  co2_cum: '#10b981',    // 绿
-  ch4_rate: '#6366f1',   // 靛蓝
-  co2_rate: '#14b8a6',   // 青
-  ch4_total: '#3b82f6',
-  co2_total: '#10b981',
-  deg_fast: '#ef4444',   // 红 - 快速纤维素
-  deg_slow: '#f97316',   // 橙 - 慢速纤维素
-  deg_glucose: '#eab308', // 黄 - 葡萄糖
-  deg_protein: '#22c55e', // 绿 - 蛋白质
-  deg_fat: '#3b82f6',    // 蓝 - 脂肪
-  deg_vfa: '#8b5cf6',    // 紫 - VFA
-  deg_bacteria: '#06b6d4', // 青 - 细菌
-  DISPLACEMENT_Y1: '#f59e0b', // 琥珀 - 沉降
-};
-const getColor = (varName?: string) => (varName && CHART_COLORS[varName]) || '#06b6d4';
-
-/** SVG 时程曲线（带 hover 十字线取值） */
-function TimeSeriesChart({ series }: { series: OgsTimeSeries }) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const pts = series.points;
-  if (!pts || pts.length < 2) return <p className="text-xs" style={{ color: 'var(--text-muted)' }}>数据点不足</p>;
-  const hoverPt = hoverIdx != null ? pts[hoverIdx] : null;
-  const W = 460, H = 200, PAD_L = 56, PAD_R = 16, PAD_T = 12, PAD_B = 44;
-  const ts = pts.map((p) => p.t);
-  const vs = pts.map((p) => p.v);
-  const tMin = Math.min(...ts), tMax = Math.max(...ts);
-  const vMinRaw = Math.min(...vs), vMaxRaw = Math.max(...vs);
-  // Y 轴强制从 0 开始；若数据全为负则保留原始最小值
-  const vMin = vMinRaw >= 0 ? 0 : vMinRaw;
-  const vMax = vMaxRaw >= 0 ? vMaxRaw * 1.05 : vMaxRaw; // 正值时顶部留 5% 余量
-  const tRange = tMax - tMin || 1;
-  const vRange = vMax - vMin || 1;
-  const X = (t: number) => PAD_L + (t - tMin) / tRange * (W - PAD_L - PAD_R);
-  const Y = (v: number) => H - PAD_B - (v - vMin) / vRange * (H - PAD_T - PAD_B);
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
-  const color = getColor(series.varName);
-
-  // Y 轴刻度（3~5 个，从 0 开始）
-  const yTicks: number[] = [];
-  const yStep = vRange / 4;
-  for (let i = 0; i <= 4; i++) yTicks.push(vMin + i * yStep);
-
-  // X 轴刻度（智能选择步长）
-  const xTicks: number[] = [];
-  let xStep: number;
-  if (tRange <= 10) xStep = 1;
-  else if (tRange <= 50) xStep = 5;
-  else if (tRange <= 200) xStep = 20;
-  else if (tRange <= 1000) xStep = 100;
-  else xStep = Math.ceil(tRange / 8 / 100) * 100;
-  for (let t = Math.ceil(tMin / xStep) * xStep; t <= tMax; t += xStep) xTicks.push(t);
-
-  // X 轴单位推断
-  const xUnit = tMax > 1e5 ? 's' : tMax > 1000 ? 's' : 'd';
-  // 图表绘制区域中心
-  const plotCenterX = PAD_L + (W - PAD_L - PAD_R) / 2;
-  const plotCenterY = PAD_T + (H - PAD_T - PAD_B) / 2;
-
-  // 鼠标移动 → 最近数据点索引
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width * W;
-    if (x < PAD_L || x > W - PAD_R) { setHoverIdx(null); return; }
-    const t = tMin + (x - PAD_L) / (W - PAD_L - PAD_R) * tRange;
-    let best = 0, bestD = Infinity;
-    for (let i = 0; i < pts.length; i++) {
-      const d = Math.abs(pts[i].t - t);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    setHoverIdx(best);
-  };
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" role="img" aria-label={series.name}
-         onMouseMove={onMove} onMouseLeave={() => setHoverIdx(null)}>
-      {/* hover 十字线 + 取值气泡 */}
-      {hoverPt && (
-        <g>
-          <line x1={X(hoverPt.t)} y1={PAD_T} x2={X(hoverPt.t)} y2={H - PAD_B} stroke={color} strokeOpacity="0.4" strokeDasharray="3,3" />
-          <circle cx={X(hoverPt.t)} cy={Y(hoverPt.v)} r="4" fill="#fff" stroke={color} strokeWidth="2" />
-          <g>
-            <rect
-              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104)}
-              y={PAD_T + 2}
-              width="104" height="30" rx="4"
-              fill="rgba(13,21,37,0.92)" stroke={color} strokeOpacity="0.5"
-            />
-            <text
-              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104) + 52}
-              y={PAD_T + 14} textAnchor="middle" fontSize="9" fill="#cbd5e1">
-              t={fmtAxis(hoverPt.t)}{series.name.includes('日产') ? 'd' : ''}
-            </text>
-            <text
-              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104) + 52}
-              y={PAD_T + 26} textAnchor="middle" fontSize="10" fontWeight="600" fill={color}>
-              {fmtAxis(hoverPt.v)} {series.unit || ''}
-            </text>
-          </g>
-        </g>
-      )}
-      {/* 网格线 */}
-      {yTicks.map((v, i) => (
-        <g key={`y${i}`}>
-          <line x1={PAD_L} y1={Y(v)} x2={W - PAD_R} y2={Y(v)} stroke="var(--border)" strokeOpacity="0.5" strokeDasharray="2,3" />
-          <text x={PAD_L - 6} y={Y(v) + 3} textAnchor="end" fontSize="9" fill="var(--text-muted)">{fmtAxis(v)}</text>
-        </g>
-      ))}
-      {xTicks.map((t) => (
-        <g key={`x${t}`}>
-          <line x1={X(t)} y1={H - PAD_B} x2={X(t)} y2={H - PAD_B + 3} stroke="var(--border)" />
-          <text x={X(t)} y={H - PAD_B + 14} textAnchor="middle" fontSize="8" fill="var(--text-muted)">{fmtAxis(t)}</text>
-        </g>
-      ))}
-      {/* 坐标轴 */}
-      <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="var(--border)" />
-      <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="var(--border)" />
-      {/* X 轴标题 — 底部居中独立放置 */}
-      <text x={plotCenterX} y={H - 4} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
-        时间 ({xUnit})
-      </text>
-      {/* Y 轴标题 — 左侧垂直居中独立放置（单位归属测量值，写在 Y 轴） */}
-      <text x={14} y={plotCenterY} textAnchor="middle" fontSize="9" fill="var(--text-muted)"
-            transform={`rotate(-90, 14, ${plotCenterY})`}>
-        {series.unit ? `${series.name}（${series.unit}）` : series.name}
-      </text>
-      {/* 曲线 */}
-      <path d={line} fill="none" stroke={color} strokeWidth="2" />
-      {/* 起止点 */}
-      <circle cx={X(pts[0].t)} cy={Y(pts[0].v)} r="3" fill={color} />
-      <circle cx={X(pts[pts.length - 1].t)} cy={Y(pts[pts.length - 1].v)} r="3" fill={color} opacity="0.6" />
-      {/* 终点数值标注 */}
-      <text x={X(pts[pts.length - 1].t) + 4} y={Y(pts[pts.length - 1].v) - 4} fontSize="9" fontWeight="600" fill={color}>
-        {fmtAxis(pts[pts.length - 1].v)}
-      </text>
-    </svg>
-  );
 }
 
 /** 关键指标卡片 */
@@ -197,6 +40,7 @@ function MetricCard({ icon, label, value, unit, color }: { icon: React.ReactNode
 }
 
 export default function OgsSimPage() {
+  const navigate = useNavigate();
   const [scenarios, setScenarios] = useState<OgsScenarioMeta[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [solverNative, setSolverNative] = useState(false);
@@ -228,6 +72,18 @@ export default function OgsSimPage() {
       setSelectedId(scenarios[0].id);
     }
   }, [scenarios, selectedId]);
+
+  // 消费跨页联动：计算中心「联动」跳转带来的场景预选（ogs-prefill）
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('ogs-prefill');
+      if (!raw) return;
+      sessionStorage.removeItem('ogs-prefill');
+      const pre = JSON.parse(raw) as { scenario?: string; params?: Record<string, number> };
+      if (pre.scenario) setSelectedId(pre.scenario);
+      if (pre.params && Object.keys(pre.params).length) setParams(prev => ({ ...prev, ...pre.params }));
+    } catch { /* ignore */ }
+  }, []);
 
   const scenario = scenarios.find((s) => s.id === selectedId);
 
@@ -371,9 +227,29 @@ export default function OgsSimPage() {
                   {result.scenarioName} · 求解结果
                   {result.ok && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}>正常收敛</span>}
                 </h2>
-                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                  模拟 {result.simulationTime ?? '-'} · {result.elapsedMs > 0 ? `求解 ${result.elapsedMs}ms` : '确定性计算'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {result.ok && (result.scenario === 'settlement' || result.scenario === 'gas-production') && (
+                    <button
+                      onClick={() => {
+                        try {
+                          sessionStorage.setItem('scene-ogs', JSON.stringify({
+                            kind: 'ogs', scenario: result.scenario, scenarioName: result.scenarioName,
+                            timeSeries: result.timeSeries, ts: Date.now(),
+                          }));
+                        } catch { /* ignore */ }
+                        navigate('/3d-simulator');
+                      }}
+                      className="text-[10px] px-2.5 py-1 rounded-full border flex items-center gap-1 transition-colors"
+                      style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                      title={result.scenario === 'settlement' ? '沉降时程驱动 3D 堆体下沉' : '产气强度驱动 3D 火炬'}
+                    >
+                      <Box size={11} /> 在 3D 中查看
+                    </button>
+                  )}
+                  <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                    模拟 {result.simulationTime ?? '-'} · {result.elapsedMs > 0 ? `求解 ${result.elapsedMs}ms` : '确定性计算'}
+                  </span>
+                </div>
               </div>
 
               {/* 关键指标卡片（产气场景） */}

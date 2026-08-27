@@ -194,6 +194,13 @@ export function settlementHyper(
       蠕变剩余: `${creepRemaining} mm`,
       库容修正: `${capacityCorrection}%`,
     },
+    series: [{
+      name: '沉降时程 s(t)', unit: 'mm', varName: 'settle_curve',
+      points: Array.from({ length: 41 }, (_, i) => {
+        const y = i * 1.25; // 0~50 年
+        return { t: y, v: +(s_inf * y * 365 / (a + y * 365)).toFixed(1) };
+      }),
+    }],
   };
 }
 
@@ -285,6 +292,14 @@ export function calculateLeachate(
       渗漏量: `${leakageTotal.toFixed(0)} m³/a`,
       回喷折减: `${(recirculationRatio * 100).toFixed(0)}%`,
     },
+    series: [{
+      name: '月产量（雨/旱季正弦近似）', unit: 'm³/月', varName: 'leach_monthly',
+      points: Array.from({ length: 12 }, (_, m) => {
+        // 江南典型降雨季节性：5-6 月梅雨峰、11-12 月旱谷
+        const seasonal = 1 + 1.1 * Math.sin(((m - 2) / 12) * 2 * Math.PI);
+        return { t: m + 1, v: +(monthly * Math.max(0.25, seasonal)).toFixed(0) };
+      }),
+    }],
   };
 }
 
@@ -372,6 +387,20 @@ export function lfgYield(
       发电潜力: `${MWh.toFixed(1)} MW`,
       年减碳: `${tCO2eYear.toFixed(1)} tCO2e/a`,
     },
+    series: [
+      {
+        name: '年产气速率 Q(t)', unit: '万m³/a', varName: 'lfg_rate',
+        points: Array.from({ length: Math.max(2, Math.min(51, year + 1)) }, (_, i) => ({
+          t: i, v: +(k * Lo * Mt * Math.exp(-k * i) / 1e4).toFixed(2),
+        })),
+      },
+      {
+        name: '累计产气量', unit: '万m³', varName: 'lfg_cum',
+        points: Array.from({ length: Math.max(2, Math.min(51, year + 1)) }, (_, i) => ({
+          t: i, v: +(Lo * Mt * (1 - Math.exp(-k * i)) / 1e4).toFixed(1),
+        })),
+      },
+    ],
   };
 }
 
@@ -567,6 +596,22 @@ export function advect(
       达01C0: `${xMax.toFixed(0)} m`,
       残余时间: `${residualTime.toFixed(0)} d`,
     },
+    series: [
+      {
+        name: '完整模型 C(x)', unit: 'mg/L', varName: 'advect_full',
+        points: Array.from({ length: 31 }, (_, i) => {
+          const xi = (x * i) / 30;
+          return { t: +xi.toFixed(1), v: +(C0 * Math.exp((-v * xi) / (D * retardationFactor) - decayRate * (xi / Math.max(v, 0.001)))).toFixed(4) };
+        }),
+      },
+      {
+        name: '仅对流-弥散 C(x)', unit: 'mg/L', varName: 'advect_base',
+        points: Array.from({ length: 31 }, (_, i) => {
+          const xi = (x * i) / 30;
+          return { t: +xi.toFixed(1), v: +(C0 * Math.exp((-v * xi) / D)).toFixed(4) };
+        }),
+      },
+    ],
   };
 }
 
