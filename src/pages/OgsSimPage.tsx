@@ -59,10 +59,12 @@ const CHART_COLORS: Record<string, string> = {
 };
 const getColor = (varName?: string) => (varName && CHART_COLORS[varName]) || '#06b6d4';
 
-/** SVG 时程曲线 */
+/** SVG 时程曲线（带 hover 十字线取值） */
 function TimeSeriesChart({ series }: { series: OgsTimeSeries }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const pts = series.points;
   if (!pts || pts.length < 2) return <p className="text-xs" style={{ color: 'var(--text-muted)' }}>数据点不足</p>;
+  const hoverPt = hoverIdx != null ? pts[hoverIdx] : null;
   const W = 460, H = 200, PAD_L = 56, PAD_R = 16, PAD_T = 12, PAD_B = 44;
   const ts = pts.map((p) => p.t);
   const vs = pts.map((p) => p.v);
@@ -99,8 +101,48 @@ function TimeSeriesChart({ series }: { series: OgsTimeSeries }) {
   const plotCenterX = PAD_L + (W - PAD_L - PAD_R) / 2;
   const plotCenterY = PAD_T + (H - PAD_T - PAD_B) / 2;
 
+  // 鼠标移动 → 最近数据点索引
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * W;
+    if (x < PAD_L || x > W - PAD_R) { setHoverIdx(null); return; }
+    const t = tMin + (x - PAD_L) / (W - PAD_L - PAD_R) * tRange;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.abs(pts[i].t - t);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    setHoverIdx(best);
+  };
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={series.name}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" role="img" aria-label={series.name}
+         onMouseMove={onMove} onMouseLeave={() => setHoverIdx(null)}>
+      {/* hover 十字线 + 取值气泡 */}
+      {hoverPt && (
+        <g>
+          <line x1={X(hoverPt.t)} y1={PAD_T} x2={X(hoverPt.t)} y2={H - PAD_B} stroke={color} strokeOpacity="0.4" strokeDasharray="3,3" />
+          <circle cx={X(hoverPt.t)} cy={Y(hoverPt.v)} r="4" fill="#fff" stroke={color} strokeWidth="2" />
+          <g>
+            <rect
+              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104)}
+              y={PAD_T + 2}
+              width="104" height="30" rx="4"
+              fill="rgba(13,21,37,0.92)" stroke={color} strokeOpacity="0.5"
+            />
+            <text
+              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104) + 52}
+              y={PAD_T + 14} textAnchor="middle" fontSize="9" fill="#cbd5e1">
+              t={fmtAxis(hoverPt.t)}{series.name.includes('日产') ? 'd' : ''}
+            </text>
+            <text
+              x={Math.min(Math.max(X(hoverPt.t) - 52, PAD_L), W - PAD_R - 104) + 52}
+              y={PAD_T + 26} textAnchor="middle" fontSize="10" fontWeight="600" fill={color}>
+              {fmtAxis(hoverPt.v)} {series.unit || ''}
+            </text>
+          </g>
+        </g>
+      )}
       {/* 网格线 */}
       {yTicks.map((v, i) => (
         <g key={`y${i}`}>
@@ -157,8 +199,10 @@ function MetricCard({ icon, label, value, unit, color }: { icon: React.ReactNode
 export default function OgsSimPage() {
   const [scenarios, setScenarios] = useState<OgsScenarioMeta[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [solverNative, setSolverNative] = useState(false);
+  const [platform, setPlatform] = useState('');
   const [exePath, setExePath] = useState<string>('');
-  const [selectedId, setSelectedId] = useState('gw-flow');
+  const [selectedId, setSelectedId] = useState('gas-production');
   const [params, setParams] = useState<Record<string, number>>({});
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<OgsRunResult | null>(null);
@@ -170,6 +214,8 @@ export default function OgsSimPage() {
       const r = await fetch('/api/ogs/status').then((x) => x.json());
       setScenarios(r.scenarios ?? []);
       setAvailable(!!r.available);
+      setSolverNative(!!r.solverNative);
+      setPlatform(r.platform ?? '');
       setExePath(r.exe ?? '');
     } catch { setAvailable(false); }
   }, []);
@@ -226,14 +272,15 @@ export default function OgsSimPage() {
               <FlaskConical size={20} style={{ color: 'var(--primary)' }} /> 稳定化计算
             </h1>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              OpenGeoSys 有限元求解器本地调用 · 确定性数值内核，非 LLM 推算
+              确定性数值内核（ADM1 生化模型 · Terzaghi 固结理论，源自 OpenGeoSys 算例标定）· 非 LLM 推算
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] px-2 py-1 rounded-full font-mono"
                   style={{ backgroundColor: available ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                           color: available ? '#10b981' : '#ef4444', border: '1px solid currentColor' }}>
-              {available ? '✓ 求解器就绪' : '✗ 求解器不可用'}
+                           color: available ? '#10b981' : '#ef4444', border: '1px solid currentColor' }}
+                  title={solverNative ? '原生求解器在本平台可用' : `原生 ogs 求解器为 Windows 可执行文件，当前平台（${platform}）仅用解析内核`}>
+              {available ? (solverNative ? '✓ 内核就绪（含原生求解器）' : '✓ 解析内核就绪') : '✗ 不可用'}
             </span>
             <button onClick={loadStatus} className="p-1.5 rounded-lg border" title="刷新状态"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
@@ -244,8 +291,8 @@ export default function OgsSimPage() {
 
         {available === false && (
           <div className="rounded-xl border p-4 mb-4 text-sm" style={{ borderColor: '#f59e0b55', color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)' }}>
-            ⚠ 未找到 OGS 求解器（ogs.exe）。请在项目根目录 .env 设置 <code>OGS_EXE=你的ogs.exe路径</code>，
-            或将求解器拷贝到 <code>data/ogs/bin/ogs.exe</code>。当前尝试路径：<code>{exePath || '无'}</code>
+            ⚠ 数值内核不可用。请在项目根目录 .env 设置 <code>OGS_EXE=你的ogs路径</code>。
+            当前平台：<code>{platform}</code> · 尝试路径：<code>{exePath || '无'}</code>
           </div>
         )}
 

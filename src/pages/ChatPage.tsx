@@ -525,7 +525,7 @@ export default function ChatPage({
           <div className="flex flex-col items-center justify-center h-full">
             <Bot size={40} style={{ color: 'var(--border-accent)' }} />
             <p className="text-sm mt-3 font-medium" style={{ color: 'var(--text-muted)' }}>
-              LandfillMind · 填埋场智慧监测 AI 助手
+              LandfillMind · 填埋场全周期智能体 AI 助手
             </p>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
               问我关于填埋场设计、施工、运营的任何问题

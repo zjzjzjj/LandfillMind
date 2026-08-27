@@ -97,7 +97,7 @@ export function useChat(opts: UseChatOptions) {
 
     try {
       const agent = getAgent(session.agentId);
-      let systemPrompt = agent?.systemPrompt ?? '你是 LandfillMind · 填埋场智慧监测系统 AI 助手。';
+      let systemPrompt = agent?.systemPrompt ?? '你是 LandfillMind · 填埋场全周期智能体 AI 助手。';
 
       // P0-8 修复：追问专家身份 → 覆盖 systemPrompt
       //   来自 MultiAgentPage / DiagnosisPage 跳转时写入的 sessionStorage.chat-prefill-expert

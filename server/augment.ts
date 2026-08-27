@@ -37,15 +37,18 @@ export interface CalcIntent { name: string; params: Record<string, number | stri
 export interface OgsIntent { scenario: string; params: Record<string, number>; }
 
 /**
- * 关键词 → OGS 数值模拟意图路由（保守触发：必须含模拟/仿真类词）
- * 产气/填埋气 → gas-production（约 20s）；沉降/固结 → settlement（约 1s）；其它模拟词默认 gas-production
+ * 关键词 → 稳定化计算意图路由（保守触发：必须含模拟/仿真/计算类词）
+ * 产气/填埋气 → gas-production；降解/水解/纤维素 → degradation；沉降/固结 → settlement；其它默认 gas-production
  */
 export function detectOgsIntent(q: string): OgsIntent | null {
   if (!q) return null;
-  const sim = /模拟|仿真|数值|有限元|渗流场|水头分布|OpenGeoSys|\bOGS\b|数值计算|运移模拟|产气|沉降/.test(q);
+  const sim = /模拟|仿真|数值|有限元|渗流场|水头分布|OpenGeoSys|\bOGS\b|数值计算|运移模拟|产气|沉降|降解/.test(q);
   if (!sim) return null;
   if (/(产气|填埋气|产甲烷|CH4|甲烷产量|气体|厌氧).*(模拟|计算)|(模拟|计算).*(产气|填埋气|产甲烷|气体)/.test(q)) {
     return { scenario: 'gas-production', params: {} };
+  }
+  if (/(降解|水解|纤维素|VFA|脂肪酸|厌氧消化|有机物).*(模拟|计算|曲线|速率)|(模拟|计算|曲线).*(降解|水解|纤维素|有机物)/.test(q)) {
+    return { scenario: 'degradation', params: {} };
   }
   if (/(沉降|固结|压缩|s\(t\)|变形).*(模拟|计算)|(模拟|计算).*(沉降|固结)/.test(q)) {
     return { scenario: 'settlement', params: {} };

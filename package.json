@@ -1,7 +1,7 @@
 {
   "name": "landfillmind",
   "version": "4.1.0",
-  "description": "LandfillMind · 填埋场智慧监测系统 v4.2 — 填埋场/地下水污染场地 AI 智能诊断系统",
+  "description": "LandfillMind · 填埋场全周期智能体 v4.2 — 填埋场/地下水污染场地 AI 智能诊断系统",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -9,6 +9,7 @@
     "dev:client": "vite",
     "build": "vite build",
     "typecheck": "tsc -b",
+    "test:ogs": "tsx tests/ogs-models.test.ts",
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "eval:agent": "tsx scripts/eval-agent.ts"

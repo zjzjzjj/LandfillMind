@@ -757,7 +757,7 @@ export default function HomePage() {
       {/* ===== 页脚 ===== */}
       <footer className="border-t text-center py-5" style={{ borderColor: 'var(--border)' }}>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          LandfillMind · 填埋场智慧监测系统 v4.2 · 基于 CodeBuddy Agent SDK · 第一届"海之子"杯 AI 智能体挑战计划参赛作品
+          LandfillMind · 填埋场全周期智能体 v4.2 · 基于 CodeBuddy Agent SDK · 第一届"海之子"杯 AI 智能体挑战计划参赛作品
         </p>
       </footer>
     </div>

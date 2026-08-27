@@ -1,4 +1,4 @@
-# Changelog · LandfillMind 填埋场智慧监测系统
+# Changelog · LandfillMind 填埋场全周期智能体
 
 ## v4.2（2026-08-18 · 评审前冲刺：12 项核心修复 + 2 项差异化创新）
 

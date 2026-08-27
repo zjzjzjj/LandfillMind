@@ -475,7 +475,7 @@ export async function callDeepSeekAdvice(
 ): Promise<DetailedReport> {
   const overallRisk = maxSeverity(hazards);
 
-  const sys = `你是环境岩土工程专家，服务于"LandfillMind · 填埋场智慧监测系统"（第一届"海之子"杯 AI 智能体挑战计划，主题"为人民建好房，为工友谋幸福"）。
+  const sys = `你是环境岩土工程专家，服务于"LandfillMind · 填埋场全周期智能体"（第一届"海之子"杯 AI 智能体挑战计划，主题"为人民建好房，为工友谋幸福"）。
 
 ## 专业知识背景
 - 注气驱水技术：往填埋场注入气体（空气）把孔隙水"顶"出来，目标含水率降至≤30%

@@ -264,8 +264,8 @@ function ogsReleasedWater(m: number, mIni: number, mCri: number, c: number): num
  */
 function computeGasForecast(params: Record<string, number>): OgsRunResult {
   const M = Number.isFinite(params.wasteMass) ? params.wasteMass : 500;          // 万吨
-  const years = Math.max(1, Math.round(Number.isFinite(params.simYears) ? params.simYears : 20));
-  const tempC = Number.isFinite(params.temperature) ? params.temperature : 40;   // °C（OGS 基准 40°C=313K）
+  const years = Math.max(1, Math.round(Number.isFinite(params.simYears) ? params.simYears : 1));
+  const tempC = Number.isFinite(params.temperature) ? params.temperature : 35;   // °C
   const moist = Number.isFinite(params.moisture) ? params.moisture : 50;         // %
 
   // ── 用户可调参数（来自 OGS user_def_reac.py） ──
@@ -414,6 +414,7 @@ function computeGasForecast(params: Record<string, number>): OgsRunResult {
     `📈 产气动态：\n` +
     `   CH₄ 日产峰值 第${Math.ceil(peakDay/365)}年（第${peakDay}天）约 ${toVol(peakCh4Rate).toFixed(2)} 万m³/d\n` +
     `   第1年 CH₄ 产气占比 ${toVol(year1Ch4Kg) / cumVolCH4 * 100 > 99.9 ? '>99.9' : (toVol(year1Ch4Kg) / cumVolCH4 * 100).toFixed(1)}%（高温水解快）\n` +
+    (years > 2 ? `   ⚠ 模型水解速率快，产气在第 1 年内基本完成；第 2 年起累计曲线走平，延长年限仅验证长期稳定性\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⚡ 资源化利用：\n` +
     `   发电潜力 ${mwh.toFixed(0)} MWh（CH₄ 热值 9.97 kWh/m³）\n` +
@@ -433,8 +434,8 @@ function computeGasForecast(params: Record<string, number>): OgsRunResult {
  * 展示各有机组分（纤维素、VFA、细菌等）浓度随时间的变化
  */
 function computeDegradation(params: Record<string, number>): OgsRunResult {
-  const years = Math.max(1, Math.round(Number.isFinite(params.simYears) ? params.simYears : 20));
-  const tempC = Number.isFinite(params.temperature) ? params.temperature : 40;
+  const years = Math.max(1, Math.round(Number.isFinite(params.simYears) ? params.simYears : 1));
+  const tempC = Number.isFinite(params.temperature) ? params.temperature : 35;
   const moist = Number.isFinite(params.moisture) ? params.moisture : 50;
 
   // ── 用户可调参数 ──
@@ -721,9 +722,45 @@ export function listOgsScenarios(): Array<{ id: string; name: string; descriptio
   return SCENARIOS.map((s) => ({ id: s.id, name: s.name, description: s.description, params: s.params }));
 }
 
-export function getOgsStatus(): { available: boolean; exe?: string; scenarios: ReturnType<typeof listOgsScenarios> } {
+/**
+ * 状态探测。
+ * available：页面可正常计算（确定性内核恒可用，或存在本平台可执行的原生求解器）
+ * solverNative：原生 ogs 可执行文件在当前平台是否真的能跑
+ *   （ogs.exe 是 Windows PE，Linux 容器里文件存在也无法执行，不能据此报就绪）
+ */
+export function getOgsStatus(): {
+  available: boolean; solverNative: boolean; platform: string; exe?: string;
+  scenarios: ReturnType<typeof listOgsScenarios>;
+} {
   const exe = resolveOgsExe();
-  return { available: !!exe, exe: exe ?? undefined, scenarios: listOgsScenarios() };
+  const isWin = process.platform === 'win32';
+  // .exe 后缀的 PE 文件只能在 Windows 上执行
+  const solverNative = !!exe && (isWin || !/\.exe$/i.test(exe));
+  const hasComputeOnly = SCENARIOS.some((s) => !!s.computeOnly);
+  return {
+    available: hasComputeOnly || solverNative,
+    solverNative,
+    platform: process.platform,
+    exe: exe ?? undefined,
+    scenarios: listOgsScenarios(),
+  };
+}
+
+/** 清理旧的运行产物，仅保留最近 KEEP 次（防止 runs 目录无限增长） */
+function pruneOldRuns(keep = 20): void {
+  try {
+    const dirs = [OGS_RUNS_DIR, path.join(os.tmpdir(), 'LandfillMind_OGS_runs')];
+    for (const root of dirs) {
+      if (!fs.existsSync(root)) continue;
+      const entries = fs.readdirSync(root)
+        .map((name) => {
+          const p = path.join(root, name);
+          return { p, mtime: fs.statSync(p).mtimeMs };
+        })
+        .sort((a, b) => b.mtime - a.mtime);
+      for (const e of entries.slice(keep)) fs.rmSync(e.p, { recursive: true, force: true });
+    }
+  } catch { /* 清理失败不影响主流程 */ }
 }
 
 /** 把模板拷贝到运行目录（剔除 .tec/.png 等旧输出） */
@@ -785,6 +822,7 @@ export async function runOgsScenario(
 
   const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const workDir = stageTemplate(scenario, runId);
+  pruneOldRuns();
   const start = Date.now();
 
   try {

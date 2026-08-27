@@ -1,5 +1,5 @@
 /**
- * LandfillMind · 填埋场智慧监测系统 v4.2 — 后端服务入口
+ * LandfillMind · 填埋场全周期智能体 v4.2 — 后端服务入口
  * 职责：SSE 流式对话 / 会话管理 / KB 检索 / 计算器 / 双引擎诊断 / 健康检查
  */
 
@@ -1149,7 +1149,7 @@ async function bootstrap() {
       ? 'CodeBuddy（主）' + (cfg ? ` + ${cfg.label}（备）` : '')
       : cfg ? `${cfg.label}（${cfg.model}）` : '未配置（请在 .env 填入 API Key）';
 
-    console.log(`\n  LandfillMind · 填埋场智慧监测系统 v4.2 后端已启动`);
+    console.log(`\n  LandfillMind · 填埋场全周期智能体 v4.2 后端已启动`);
     console.log(`  端口: http://localhost:${PORT}`);
     console.log(`  模型: ${engine}`);
     console.log(`  静态托管: ${fs.existsSync(distPath) ? distPath : '未构建（开发模式走 Vite 代理）'}`);
