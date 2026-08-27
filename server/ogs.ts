@@ -12,6 +12,7 @@
 
 import { spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as calc from './calculate.js';
@@ -676,7 +677,7 @@ function stageTemplate(scenario: OgsScenario, runId: string): string {
     const err = e as NodeJS.ErrnoException;
     if (err.code === 'EACCES' || err.code === 'EPERM') {
       // 降级：使用系统临时目录的 OGS_runs 子目录
-      const fallback = path.join(require('os').tmpdir(), 'LandfillMind_OGS_runs');
+      const fallback = path.join(os.tmpdir(), 'LandfillMind_OGS_runs');
       try {
         fs.mkdirSync(fallback, { recursive: true });
         dstDir = path.join(fallback, runId);
