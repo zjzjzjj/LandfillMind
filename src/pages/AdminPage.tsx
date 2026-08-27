@@ -127,8 +127,8 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" style={{ backgroundColor: 'var(--bg-base)' }}>
-      <div className="max-w-6xl mx-auto">
+    <div className="flex-1 overflow-y-auto px-6 pt-6 pb-12" style={{ backgroundColor: 'var(--bg-base)' }}>
+      <div className="max-w-6xl mx-auto pb-4">
         {/* 页面标题 */}
         <div className="flex items-center justify-between mb-6">
           <div>

@@ -119,7 +119,7 @@ export default function OgsSimPage() {
   const setParam = (key: string, v: number) => setParams((prev) => ({ ...prev, [key]: v }));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" style={{ backgroundColor: 'var(--bg-base)' }}>
+    <div className="flex-1 overflow-y-auto px-6 pt-6 pb-12" style={{ backgroundColor: 'var(--bg-base)' }}>
       <div className="max-w-5xl mx-auto">
         {/* 页头 */}
         <div className="flex items-center justify-between mb-5">

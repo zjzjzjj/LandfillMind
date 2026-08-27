@@ -47,11 +47,13 @@ export default function App() {
       <Route path="/ogs-sim" element={<AppShell />} />
       <Route path="/settings" element={<AppShell />} />
       <Route path="/admin" element={
-        <Suspense fallback={<div className="flex items-center justify-center h-screen text-sm" style={{ color: 'var(--text-muted)' }}>加载管理员后台...</div>}>
-          <ErrorBoundary fallbackLabel="管理员后台">
-            <AdminPage />
-          </ErrorBoundary>
-        </Suspense>
+        <div className="flex h-[100dvh] w-full overflow-hidden">
+          <Suspense fallback={<div className="flex items-center justify-center h-screen text-sm" style={{ color: 'var(--text-muted)' }}>加载管理员后台...</div>}>
+            <ErrorBoundary fallbackLabel="管理员后台">
+              <AdminPage />
+            </ErrorBoundary>
+          </Suspense>
+        </div>
       } />
     </Routes>
   );

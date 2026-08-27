@@ -757,7 +757,7 @@ export default function DiagnosisPage() {
         </div>
 
         {/* 右侧结果区域 */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto px-6 pt-6 pb-12">
           {!result ? (
             <div className="flex flex-col items-center justify-center h-full">
               <Shield size={48} style={{ color: 'var(--border-accent)' }} />
