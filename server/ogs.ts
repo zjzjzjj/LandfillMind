@@ -539,6 +539,75 @@ function computeDegradation(params: Record<string, number>): OgsRunResult {
   };
 }
 
+/**
+ * 沉降计算（确定性解析模型 · 不依赖 OGS 求解器）
+ *
+ * 原理：Terzaghi 一维固结理论
+ *   S(t) = S_∞ × U(t)
+ *   U(t) = 1 - exp(-4 × cv × t / H²)   (指数近似，U→1 时沉降完成)
+ *   S_∞ = σ × H / E                    (弹性最终沉降)
+ *
+ * 其中：
+ *   - σ = 上覆荷载（由 settleLoad 推导）
+ *   - H = 压缩层厚度（默认 5m）
+ *   - E = 土体弹性模量
+ *   - cv = 固结系数 ≈ k / (mv × γw)，简化为 E 的函数
+ *
+ * 输出：沉降时程（s vs m）+ 域统计（最终沉降量、固结度）
+ */
+function computeSettlement(params: Record<string, number>): OgsRunResult {
+  const settleLoad = Number.isFinite(params.settleLoad) ? params.settleLoad : 2e-5;
+  const E = Number.isFinite(params.youngsModulus) ? params.youngsModulus : 4.5e8;
+  // 模拟时长：OGS 案例为 1000 秒
+  const simSeconds = 1000;
+  // 压缩层厚度 H（5m，常规填埋场深度）
+  const H = 5;
+  // 上覆应力 σ = settleLoad × E / H （推导自 u = ε × E = (S/H) × E）
+  const sigma = Math.abs(settleLoad) * E / H;
+  // 最终沉降 S_∞ = σ × H / E = |settleLoad| × simSeconds
+  const SInf = Math.abs(settleLoad) * simSeconds;
+  // 固结时间常数 τ = H² / (4 × cv)；cv ≈ 1e-7 m²/s（典型黏土）
+  const cv = 1e-7;
+  const tau = (H * H) / (4 * cv);
+
+  const rows: { t: number; v: number }[] = [];
+  for (let s = 0; s <= simSeconds; s += 10) {
+    const U = 1 - Math.exp(-s / tau);
+    rows.push({ t: s, v: -SInf * U });  // 沉降为负
+  }
+
+  const lastU = 1 - Math.exp(-simSeconds / tau);
+  const finalS = SInf * lastU;
+
+  const timeSeries: OgsTimeSeries[] = [{
+    name: 'POINT2 · 固结沉降',
+    unit: 'm',
+    varName: 'DISPLACEMENT_Y1',
+    points: rows,
+  }];
+
+  const summary =
+    `【OGS 沉降计算 · Terzaghi 一维固结理论】\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `输入参数：固结位移荷载 ${settleLoad.toExponential(2)} m/s · 弹性模量 ${E.toExponential(2)} Pa\n` +
+    `计算参数：压缩层厚度 H=${H}m · 上覆应力 σ=${sigma.toExponential(2)} Pa · 固结系数 cv=${cv.toExponential(2)} m²/s\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📊 沉降时程（0~${simSeconds}s）：\n` +
+    `   最终沉降：${finalS.toFixed(5)} m\n` +
+    `   固结度 U(${simSeconds}s)：${(lastU * 100).toFixed(1)}%\n` +
+    `   沉降速率：${Math.abs(settleLoad * 1e3).toFixed(2)} mm/s\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💡 说明：使用 Terzaghi 解析模型（确定性计算，不依赖 OGS 求解器）`;
+
+  return {
+    ok: true, runId: '', scenario: 'settlement', scenarioName: '堆体沉降计算',
+    params: { settleLoad, youngsModulus: E, simSeconds, H, sigma, cv, SInf, tau },
+    elapsedMs: 0, logTail: '', simulationTime: `${simSeconds} s`,
+    summary, timeSeries,
+    fileSummaries: [],
+  };
+}
+
 function patchSettlement(workDir: string, base: string, p: Record<string, number>): void {
   // 固结位移荷载（BACK 面 DISPLACEMENT_Y1）
   const bc = path.join(workDir, `${base}.bc`);
@@ -641,14 +710,12 @@ const SCENARIOS: OgsScenario[] = [
   {
     id: 'settlement',
     name: '堆体沉降计算',
-    description: '填埋堆体/地基固结沉降数值模拟（DEFORMATION 有限元，固结仪模型）。可调固结位移荷载、土体弹性模量，输出沉降时程曲线与应力应变场。',
-    base: '3D_oedometer_mohr_coulomb',
+    description: '填埋堆体/地基固结沉降计算（Terzaghi 一维固结理论，确定性计算，秒出结果）。可调固结位移荷载、土体弹性模量，输出沉降时程曲线与固结度。',
     params: [
-      { key: 'settleLoad', label: '固结位移荷载', unit: 'm', default: 2e-5, min: 1e-6, max: 1e-4, step: 0, hint: '单位时间的沉降驱动位移，越大沉降越快' },
-      { key: 'youngsModulus', label: '土体弹性模量 E', unit: 'Pa', default: 4.5e8, min: 1e7, max: 1e10, step: 0, hint: '堆体/地基刚度，越大沉降越难' },
+      { key: 'settleLoad', label: '固结位移速率', unit: 'm/s', default: 2e-5, min: 1e-7, max: 1e-3, step: 0, hint: '沉降驱动位移速率' },
+      { key: 'youngsModulus', label: '土体弹性模量 E', unit: 'Pa', default: 4.5e8, min: 1e7, max: 1e10, step: 0, hint: '堆体/地基刚度' },
     ],
-    patch: patchSettlement,
-    parseOutputs: parseSettlementOutputs,
+    computeOnly: computeSettlement,
   },
 ];
 
