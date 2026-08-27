@@ -667,8 +667,27 @@ export function getOgsStatus(): { available: boolean; exe?: string; scenarios: R
 /** 把模板拷贝到运行目录（剔除 .tec/.png 等旧输出） */
 function stageTemplate(scenario: OgsScenario, runId: string): string {
   const srcDir = path.join(OGS_SCENARIOS_DIR, scenario.id);
-  const dstDir = path.join(OGS_RUNS_DIR, runId);
-  fs.mkdirSync(dstDir, { recursive: true });
+  // 优先使用 OGS_RUNS_DIR；若权限不足则降级到系统临时目录
+  let dstDir = path.join(OGS_RUNS_DIR, runId);
+  try {
+    fs.mkdirSync(OGS_RUNS_DIR, { recursive: true });
+    fs.mkdirSync(dstDir, { recursive: true });
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err.code === 'EACCES' || err.code === 'EPERM') {
+      // 降级：使用系统临时目录的 OGS_runs 子目录
+      const fallback = path.join(require('os').tmpdir(), 'LandfillMind_OGS_runs');
+      try {
+        fs.mkdirSync(fallback, { recursive: true });
+        dstDir = path.join(fallback, runId);
+        fs.mkdirSync(dstDir, { recursive: true });
+      } catch (e2) {
+        throw new Error(`无法创建运行目录（${OGS_RUNS_DIR} 和 ${fallback} 均无权限）: ${(e2 as Error).message}`);
+      }
+    } else {
+      throw e;
+    }
+  }
   for (const f of fs.readdirSync(srcDir)) {
     // 排除旧的输出产物（.tec/.png/.bak）；注意 .out 是 OGS5 的"输出控制文件"，属于输入，必须保留
     if (/\.(tec|png|bak)$/i.test(f)) continue;
