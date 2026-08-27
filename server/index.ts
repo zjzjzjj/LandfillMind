@@ -247,7 +247,8 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
         });
         // max_tokens 超限 / 上下文过长：减半重试，最终自动降档不中断
         if (!upstream.ok && upstream.status === 400) {
-          const errText = await upstream.text().catch(() => '');
+          const errText = await upstream.clone().text().catch(() => '');
+          console.error(`[llm] ${item.cfg.model} 上游 400：`, errText.slice(0, 300));
           if (/max_tokens|maximum context|context length|invalid_request_error/i.test(errText)) {
             if (maxTokens > 512) { maxTokens = Math.floor(maxTokens / 2); continue; }
           }
@@ -259,7 +260,9 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
     }
 
     if (!upstream || !upstream.ok || !upstream.body) {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: `${lastCfg?.label ?? 'AI 服务'} 错误 (${upstream?.status ?? '网络异常'})` })}\n\n`);
+      const detail = await upstream?.clone().text().catch(() => '');
+      const brief = detail ? String(detail).replace(/\s+/g, ' ').slice(0, 140) : '';
+      res.write(`data: ${JSON.stringify({ type: 'error', message: `${lastCfg?.label ?? 'AI 服务'} 错误 (${upstream?.status ?? '网络异常'})${brief ? '：' + brief : ''}` })}\n\n`);
       return; // 不直接 end，交给 finally 统一收尾（补 [DONE] + end）
     }
 

@@ -9,7 +9,7 @@ import type { RiskLevel, DiagnosisResult, RiskItem } from '../types';
 import { useDetailPref } from '../utils/detailPref';
 import { buildDiagnosisMarkdown, downloadJSON, downloadText, markdownToHtml, openPrintableHtml, timestampName } from '../utils/exporter';
 import { buildSafetyBrief } from '../utils/safetyBrief';
-import { RiskMap } from '../components/RiskMap';
+import { RiskMap, planEscapeRoutes } from '../components/RiskMap';
 import { VerificationTheater } from '../components/VerificationTheater';
 
 // ========================
@@ -320,43 +320,39 @@ export default function DiagnosisPage() {
   }, [result]);
 
   // 风险地图适配层：RiskItem（无坐标）→ RiskMap zones/routes
-  // RiskItem 没有 x/y/radius 字段，按 category 派发预设点位坐标，
-  // 同一类别水平错开避免堆叠；只把 red/orange 风险纳入疏散路线可视化
+  // 点位贴合底图设施：边坡隐患在库区西侧坝肩、渗滤液风险靠调节池、
+  // 填埋气在库区中部气井密集区、地下水在下游监测井一线；
+  // 同类别多点位环绕散布避免堆叠。疏散路线经安全走廊至最近集合点。
   const riskMapData = useMemo(() => {
     if (!result) return null;
-    const CATEGORY_COORD: Record<string, { x: number; y: number }> = {
-      '边坡': { x: 25, y: 28 },
-      '渗滤液': { x: 70, y: 30 },
-      '填埋气': { x: 50, y: 48 },
-      '地下水': { x: 35, y: 72 },
-      '综合': { x: 60, y: 65 },
+    const CATEGORY_COORD: Record<string, { x: number; y: number; ring?: number }> = {
+      '边坡': { x: 21, y: 42, ring: 22 },   // 库区西缘/垃圾坝侧
+      '渗滤液': { x: 63, y: 66, ring: 20 }, // 渗滤液调节池附近
+      '填埋气': { x: 44, y: 36, ring: 16 }, // 库区中部
+      '地下水': { x: 44, y: 84, ring: 24 }, // 下游监测井线
+      '综合': { x: 70, y: 48, ring: 18 },   // 场区东部
     };
     const hot = (result.risks ?? []).filter(r => r.level === 'red' || r.level === 'orange' || r.level === 'yellow');
     const zones = hot.map((r, i) => {
       const coord = CATEGORY_COORD[r.category] ?? CATEGORY_COORD['综合'];
-      // 同类别多个风险点位水平错开，避免重叠
-      const offset = (i % 3) * 7;
+      const ring = coord.ring ?? 14;
+      // 同类别多点位：按序绕环分布，单点位居中
+      const n = hot.filter(o => (CATEGORY_COORD[o.category] ?? CATEGORY_COORD['综合']) === coord).length;
+      const angle = -Math.PI / 3 + (Math.PI * 2 * i) / Math.max(n, 1);
+      const spread = n > 1 ? ring * 0.55 : 0;
+      const x = Math.max(8, Math.min(90, coord.x + Math.cos(angle) * spread));
+      const y = Math.max(10, Math.min(90, coord.y + Math.sin(angle) * spread));
       return {
         id: r.id,
         label: r.title.length > 8 ? r.title.slice(0, 8) + '…' : r.title,
         level: r.level,
-        x: Math.min(90, coord.x + offset),
-        y: coord.y,
-        radius: r.level === 'red' ? 14 : r.level === 'orange' ? 12 : 10,
+        x, y,
+        radius: r.level === 'red' ? 11 : r.level === 'orange' ? 9.5 : 8,
         description: r.description,
       };
     });
-    // 疏散路线：仅 red/orange 风险点位生成到场地外集合点（右下角）
-    const routes = zones.filter(z => z.level === 'red' || z.level === 'orange').map((z) => ({
-      id: `route-${z.id}`,
-      label: '→ 应急集合点',
-      color: '#16a34a',
-      points: [
-        { x: z.x, y: z.y },
-        { x: z.x + 10, y: z.y + 6 },
-        { x: 92, y: 95 },
-      ],
-    }));
+    // 疏散路线：经安全走廊绕行至 A/B 集合点（不横穿库区中心）
+    const routes = planEscapeRoutes(zones);
     const siteName = String((result.site as any)?.siteName ?? '示范场地 LF-01');
     return { zones, routes, siteName };
   }, [result]);
@@ -1034,7 +1030,7 @@ export default function DiagnosisPage() {
                       zones={riskMapData.zones}
                       routes={riskMapData.routes}
                       siteName={riskMapData.siteName}
-                      workerLocation={{ x: 50, y: 90 }}
+                      workerLocation={{ x: 33, y: 30 }}
                       width={560}
                       height={360}
                     />
