@@ -747,7 +747,7 @@ export default function DiagnosisPage() {
           ) : (
             <div className="p-4">
               <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
-                CSV 批量导入将在 v4.2 开放
+                CSV 批量导入将在 v4.4 开放
               </p>
               <p className="text-[10px] text-center -mt-6" style={{ color: 'var(--text-muted)' }}>
                 评审版仅支持手动填写表单字段

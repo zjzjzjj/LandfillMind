@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Boxes, RotateCcw, Camera, FileDown, MessageCircle, Link2 } from 'lucide-react';
 // 常量/类型从纯模块 geo.ts 拿（不拉入 three.js）
 import { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite, readSceneBuilt } from '../components/LandfillScene3D/geo';
-import type { GeoParams, LandfillApi } from '../components/LandfillScene3D/geo';
+import type { GeoParams, LandfillApi, SceneQuality } from '../components/LandfillScene3D/geo';
 // 组件本体懒加载（~500KB three.js）
 const LandfillScene3D = lazy(() => import('../components/LandfillScene3D'));
 import { buildSimSnapshotMarkdown, downloadDataUrl, downloadJSON, downloadText, timestampName } from '../utils/exporter';
@@ -53,6 +53,7 @@ export default function SimulatorPage() {
   const canvasWrap = useRef<HTMLDivElement>(null);
   const [canvasHeight, setCanvasHeight] = useState(640);
   const [linkInfo, setLinkInfo] = useState<string | null>(null);
+  const [quality, setQuality] = useState<SceneQuality>('auto');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -172,6 +173,27 @@ export default function SimulatorPage() {
             ))}
           </div>
 
+          {/* 画质三档：性能自适应（低端自动降档） */}
+          <div className="flex items-center gap-1.5 mb-4 px-0.5">
+            <span className="text-[11px] font-medium shrink-0" style={{ color: 'var(--text-muted)' }}>画质</span>
+            <div className="flex flex-1 gap-1">
+              {(['auto', 'low', 'medium', 'high'] as SceneQuality[]).map(q => (
+                <button
+                  key={q}
+                  onClick={() => setQuality(q)}
+                  className="flex-1 py-1 rounded-md text-[11px] border transition-colors"
+                  style={{
+                    borderColor: quality === q ? 'var(--primary)' : 'var(--border)',
+                    color: quality === q ? 'var(--primary)' : 'var(--text-secondary)',
+                    backgroundColor: quality === q ? 'rgba(99,102,241,0.10)' : 'transparent',
+                  }}
+                >
+                  {{ auto: '自动', low: '低', medium: '中', high: '高' }[q]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-4">
             {PARAM_FIELDS.map(f => {
               const value = geo[f.key];
@@ -224,7 +246,7 @@ export default function SimulatorPage() {
         {/* 右侧：三维模型 + 导出工具栏 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div ref={canvasWrap} className="flex-1 min-h-0 overflow-hidden relative">
-            <LandfillScene3D height={canvasHeight} geoParams={geo} apiRef={sceneApi} />
+            <LandfillScene3D height={canvasHeight} geoParams={geo} apiRef={sceneApi} quality={quality} />
             {/* 实时 IoT 传感器面板：画布右上角悬浮（数字孪生"感知层"） */}
             <div className="absolute top-3 right-3 z-20 w-72 pointer-events-none">
               <div className="pointer-events-auto">

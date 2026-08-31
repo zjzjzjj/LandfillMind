@@ -15,6 +15,8 @@ export interface GeoParams {
   volumeScale: number;      // 库容标定缩放（默认≈500 万 m³）
 }
 
+export type SceneQuality = 'auto' | 'low' | 'medium' | 'high';
+
 export const DEFAULT_GEO: GeoParams = {
   valleyWidth: 1,
   pileHeight: 1,

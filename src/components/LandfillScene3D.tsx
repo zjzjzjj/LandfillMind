@@ -12,9 +12,11 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 // 类型/常量/工具：从同目录 geo.ts 导入，避免拖入整个模块
 import {
   DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite,
-  type GeoParams, type LandfillApi, type SiteEstimate,
+  type GeoParams, type LandfillApi, type SiteEstimate, type SceneQuality,
 } from './LandfillScene3D/geo';
 import type { DiagnosisResult, RiskItem } from '../types';
+import { useSensors, SENSOR_KEYS } from '../hooks/useSensors';
+import type { SensorKey, SensorReading } from '../hooks/useSensors';
 
 // re-export 保持原导入路径兼容
 export { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite };
@@ -165,6 +167,16 @@ function riskColorHex(level: RiskItem['level']): number {
     : level === 'blue' ? 0x2563eb
     : 0x16a34a;
 }
+const SENSOR_LEVEL_HEX: Record<SensorReading['level'], number> = {
+  green: 0x10b981, yellow: 0xf59e0b, orange: 0xf97316, red: 0xef4444,
+};
+const SENSOR_BASE_POS: Record<SensorKey, [number, number, number]> = {
+  ch4: [-60, 30, -40],
+  h2s: [80, 6, 60],
+  waterLevel: [-20, 0, -80],
+  settlement: [50, 28, 10],
+  temperature: [0, 30, 30],
+};
 function riskColorCss(level: RiskItem['level']): string {
   return level === 'red' ? '#dc2626'
     : level === 'orange' ? '#ea580c'
@@ -218,6 +230,7 @@ const LAYER_OPTIONS: { key: string; label: string }[] = [
   { key: 'veh', label: '作业车辆' },
   { key: 'trees', label: '山体植被' },
   { key: 'labels', label: '文字标注' },
+  { key: 'sensors', label: '实时传感器' },
 ];
 
 const VIEW_OPTIONS: { key: 'bird' | 'dam' | 'top' | 'sec'; label: string }[] = [
@@ -354,14 +367,34 @@ const ROAM_WAYPOINTS: RoamWaypoint[] = [
   { title: '防渗衬层（剖切透视）', infoKey: 'liner', t: [-90, 45, 0], r: 380, phi: 1.1, theta: 1.4, duration: 4, hold: 2.2 },
 ];
 
+// ============ 画质三档（性能自适应）：低端环境自动降档 ============
+const QUALITY_PRESETS: Record<Exclude<SceneQuality, 'auto'>, {
+  pixelRatio: number; antialias: boolean; bloom: boolean; shadows: number; clouds: number;
+}> = {
+  low:    { pixelRatio: 1,   antialias: false, bloom: false, shadows: 0,    clouds: 4 },
+  medium: { pixelRatio: 1.5, antialias: true,  bloom: true,  shadows: 1024, clouds: 8 },
+  high:   { pixelRatio: 2,   antialias: true,  bloom: true,  shadows: 2048, clouds: 8 },
+};
+function resolveQuality(q: SceneQuality): Exclude<SceneQuality, 'auto'> {
+  if (q !== 'auto') return q;
+  // 自动：核数 ≤2 / 极低 DPR → 低；≤4 核或 1.5× → 中；否则高
+  const cores = navigator.hardwareConcurrency || 4;
+  const dpr = window.devicePixelRatio || 1;
+  if (cores <= 2 || dpr < 1) return 'low';
+  if (cores <= 4 || dpr <= 1.5) return 'medium';
+  return 'high';
+}
+
 export default function LandfillScene3D({
   height = 560,
   geoParams,
   apiRef: externalApiRef,
+  quality = 'auto',
 }: {
   height?: number;
   geoParams?: Partial<GeoParams>;
   apiRef?: { current: LandfillApi | null };
+  quality?: SceneQuality;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -389,6 +422,9 @@ export default function LandfillScene3D({
   const [monitoring, setMonitoring] = useState<MonitoringSnapshot>(DEFAULT_MONITORING);
   const monitoringRef = useRef<MonitoringSnapshot>(DEFAULT_MONITORING);
   useEffect(() => { monitoringRef.current = monitoring; }, [monitoring]);
+  const { sensors: iotSensors } = useSensors();
+  const iotSensorsRef = useRef(iotSensors);
+  useEffect(() => { iotSensorsRef.current = iotSensors; }, [iotSensors]);
   const [showHotspots, setShowHotspots] = useState(true);
   const [showLiveLabels, setShowLiveLabels] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -479,16 +515,22 @@ export default function LandfillScene3D({
     const { grass: grassTex, soil: soilTex, wasteTex, liner: linerTex, asphalt: asphaltTex, gravel: gravelTex } = buildTextures();
 
     // ---------------- 渲染器 / 场景 / 相机 / 灯光 ----------------
+    const Q = QUALITY_PRESETS[resolveQuality(quality)];
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
     } catch (e) {
       setWebglError('当前浏览器不支持 WebGL：' + (e as Error).message);
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.pixelRatio));
+    // 调试/可观测：把实际生效的画质参数挂到 canvas dataset（供自动化测试读取）
+    renderer.domElement.dataset.quality = resolveQuality(quality);
+    renderer.domElement.dataset.bloom = Q.bloom ? '1' : '0';
+    renderer.domElement.dataset.pixelRatio = String(renderer.getPixelRatio());
+    renderer.domElement.dataset.shadows = String(Q.shadows);
     renderer.setSize(width, heightPx);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = Q.shadows > 0;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -524,7 +566,7 @@ export default function LandfillScene3D({
     {
       const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: timeOfDay === 'night' ? 0.10 : 0.9, fog: false });
       const spots: [number, number, number][] = [[-430, 215, -370], [120, 265, -480], [490, 245, -170], [-510, 205, 310], [390, 255, 430], [-40, 225, 570], [-185, 235, 60], [270, 205, -330]];
-      for (const [x, y, z] of spots) {
+      for (const [x, y, z] of spots.slice(0, Q.clouds)) {
         const r = 26 + texRnd() * 16;
         const cg = new THREE.Group();
         const m1 = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cloudMat);
@@ -541,14 +583,17 @@ export default function LandfillScene3D({
     const composer = new EffectComposer(renderer);
     composer.setSize(width, heightPx);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(width, heightPx), 0.55, 0.6, 0.85);
-    composer.addPass(bloom);
+    let bloom: UnrealBloomPass | null = null;
+    if (Q.bloom) {
+      bloom = new UnrealBloomPass(new THREE.Vector2(width, heightPx), 0.55, 0.6, 0.85);
+      composer.addPass(bloom);
+    }
     composer.addPass(new OutputPass());
 
     const hemi = new THREE.HemisphereLight(preset.ambientSky, preset.ambientGround, preset.ambientIntensity); scene.add(hemi);
     const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
-    sun.position.set(260, 340, 180); sun.castShadow = timeOfDay !== 'night'; // 夜间关闭阴影提升帧率
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.position.set(260, 340, 180); sun.castShadow = timeOfDay !== 'night' && Q.shadows > 0; // 夜间/低画质关闭阴影提升帧率
+    sun.shadow.mapSize.set(Math.max(Q.shadows, 512), Math.max(Q.shadows, 512));
     sun.shadow.camera.left = -360; sun.shadow.camera.right = 360;
     sun.shadow.camera.top = 360; sun.shadow.camera.bottom = -360;
     sun.shadow.camera.near = 20; sun.shadow.camera.far = 1100;
@@ -1390,9 +1435,65 @@ export default function LandfillScene3D({
     };
     if (externalApiRef) externalApiRef.current = apiRef.current;
 
+    // =============== IoT 传感器 3D 监测点（数字孪生感知层） ===============
+    // 5 个传感器按真实世界坐标显示为"地面锚环 + 立柱 + 顶部发光点"，颜色随实时风险等级
+    const sensorMarkers: {
+      key: SensorKey; group: THREE.Group;
+      head: THREE.Mesh; headMat: THREE.MeshBasicMaterial;
+      ringMat: THREE.MeshBasicMaterial; seed: number;
+    }[] = [];
+    {
+      const sensorLayerGroup = new THREE.Group();
+      sensorLayerGroup.name = 'sensor-markers';
+      for (const key of SENSOR_KEYS) {
+        const [bx, by, bz] = SENSOR_BASE_POS[key];
+        const hx = bx * kv(), hz = bz * kv();
+        const hy = Math.max(1.4, by * kh() * 0.92 + 0.6);
+        const g = new THREE.Group();
+        g.position.set(hx, 0.15, hz);
+        // 地面锚环
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.4, 28), ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        g.add(ring);
+        // 竖向立柱
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.22, hy, 6),
+          new THREE.MeshBasicMaterial({ color: 0x475569 }),
+        );
+        pole.position.y = hy / 2;
+        g.add(pole);
+        // 顶部发光点
+        const headMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+        const head = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), headMat);
+        head.position.y = hy;
+        g.add(head);
+        sensorLayerGroup.add(g);
+        sensorMarkers.push({ key, group: g, head, headMat, ringMat, seed: key.length * 1.31 });
+      }
+      regLayer('sensors', sensorLayerGroup);
+      // 开发期可观测钩子：自动化测试读取监测点数量
+      if (import.meta.env.DEV) (window as any).__lmSensorMarkers = sensorMarkers.length;
+    }
+
     // ---------------- 主循环 ----------------
     const clock = new THREE.Clock();
     let rafId = 0;
+    let rafRunning = true;
+    const onVisibility = () => {
+      if (document.hidden && rafRunning) {
+        rafRunning = false;
+        cancelAnimationFrame(rafId);
+        clock.getDelta(); // 丢弃隐藏期间累计 delta，恢复时不跳变
+      } else if (!document.hidden && !rafRunning) {
+        rafRunning = true;
+        clock.getDelta();
+        animate();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    const onContextLost = (ev: Event) => { ev.preventDefault(); };
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost);
     const animate = () => {
       rafId = requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
@@ -1435,7 +1536,8 @@ export default function LandfillScene3D({
         ctl.t.z + ctl.r * Math.sin(ctl.phi) * Math.cos(ctl.theta));
       camera.lookAt(ctl.t);
       if (flameParts.flame) {
-        const ch4 = monitoringRef.current.ch4;
+        const ch4Live = iotSensorsRef.current.ch4?.value;
+        const ch4 = typeof ch4Live === 'number' ? (ch4Live / 100) * 8 : monitoringRef.current.ch4;
         // CH4 越高，火炬越大（0.5..8 → 0.7..2.2）；稳定化产气结果额外增强
         const scale = 0.7 + (ch4 / 8) * 1.5 + ogsGasBoost;
         flameParts.flame.scale.set(
@@ -1478,9 +1580,28 @@ export default function LandfillScene3D({
       });
       // 水波动画时间 + 液位（来自监测数据）
       waterUniforms.uTime.value = t;
-      // monitoring.leachateLevel 0.3..2.5m  →  uLevel 0..1
-      waterUniforms.uLevel.value = Math.max(0, Math.min(1, (monitoringRef.current.leachateLevel - 0.3) / 2.0));
+      {
+        const wlLive = iotSensorsRef.current.waterLevel?.value;
+        const base = typeof wlLive === 'number' ? wlLive : monitoringRef.current.leachateLevel;
+        // 渗压水位 0.3..2.5m → uLevel 0..1
+        waterUniforms.uLevel.value = Math.max(0, Math.min(1, (base - 0.3) / 2.0));
+      }
       doHover();
+      // IoT 传感器监测点：实时风险色 + 呼吸脉冲 + 坐标跟随（无数据时半透明灰）
+      {
+        const live = iotSensorsRef.current;
+        for (const mk of sensorMarkers) {
+          const r = live[mk.key];
+          const color = SENSOR_LEVEL_HEX[r?.level ?? 'green'];
+          mk.headMat.color.setHex(color);
+          mk.ringMat.color.setHex(color);
+          const alive = !!r;
+          const pulse = 1 + 0.25 * Math.sin(t * 3 + mk.seed);
+          mk.head.scale.setScalar((alive ? 1 : 0.35) * pulse);
+          mk.ringMat.opacity = (alive ? 0.5 : 0.12) + 0.25 * Math.sin(t * 2.5 + mk.seed);
+          if (r?.position) mk.group.position.set(r.position.x * kv(), 0.15, r.position.z * kv());
+        }
+      }
       composer.render();
     };
     animate();
@@ -1492,7 +1613,7 @@ export default function LandfillScene3D({
       camera.aspect = width / heightPx; camera.updateProjectionMatrix();
       renderer.setSize(width, heightPx);
       composer.setSize(width, heightPx);
-      bloom.setSize(width, heightPx);
+      if (bloom) bloom.setSize(width, heightPx);
     };
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onResize) : null;
     if (ro) ro.observe(mount);
@@ -1501,6 +1622,8 @@ export default function LandfillScene3D({
     // ---------------- 清理 ----------------
     return () => {
       cancelAnimationFrame(rafId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
       el.removeEventListener('contextmenu', onContextMenu);
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('pointermove', onPointerMove);
@@ -1527,7 +1650,7 @@ export default function LandfillScene3D({
       if (externalApiRef) externalApiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height, debouncedGeoKey, timeOfDay, diagnosis]);
+  }, [height, debouncedGeoKey, timeOfDay, diagnosis, quality]);
 
   useEffect(() => { autoRotateRef.current = autoRotate; }, [autoRotate]);
   useEffect(() => { apiRef.current?.setHotspotsVisible?.(showHotspots); }, [showHotspots]);

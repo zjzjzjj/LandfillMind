@@ -493,7 +493,7 @@ ${renderEscapeRoute()}
 ${renderQrPoster(siteName, diagnosis)}
 
 <div class="footer">
-  LandfillMind · 填埋场全周期智能体 v4.2 · 第一届"海之子"杯 AI 智能体挑战计划参赛作品 · 基于 CJJ 176 / GB 16889 / HJ 25 系列规范
+  LandfillMind · 填埋场全周期智能体 v4.4 · 第一届"海之子"杯 AI 智能体挑战计划参赛作品 · 基于 CJJ 176 / GB 16889 / HJ 25 系列规范
 </div>
 </body>
 </html>`;

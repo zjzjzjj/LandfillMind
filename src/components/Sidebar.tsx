@@ -42,7 +42,7 @@ export function Sidebar({ sessions, currentSessionId, isSettingsPage, isDiagnose
         <img src={logoImg} alt="LandfillMind" className="w-8 h-8 shrink-0 rounded-md object-contain" style={{ filter: 'drop-shadow(0 0 6px rgba(99,154,78,0.3))' }} />
         <div className="flex flex-col min-w-0">
           <span className="text-sm font-semibold leading-tight truncate" style={{ color: 'var(--text-primary)' }}>LandfillMind</span>
-          <span className="text-[10px] leading-tight font-mono" style={{ color: 'var(--primary)', opacity: 0.6 }}>Full-Cycle Agent v4.2</span>
+          <span className="text-[10px] leading-tight font-mono" style={{ color: 'var(--primary)', opacity: 0.6 }}>Full-Cycle Agent v4.4</span>
         </div>
       </button>
       <div className="px-2 pt-3 pb-2 shrink-0">

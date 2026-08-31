@@ -262,7 +262,7 @@ export default function SettingsPage({ agents, onAdd, onUpdate, onDelete }: Sett
         {/* 版本信息 */}
         <div className="text-center pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            LandfillMind · 填埋场全周期智能体 v4.2 · 第一届"海之子"杯 AI 智能体挑战计划
+            LandfillMind · 填埋场全周期智能体 v4.4 · 第一届"海之子"杯 AI 智能体挑战计划
           </p>
         </div>
       </div>

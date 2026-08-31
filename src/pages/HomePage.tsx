@@ -263,7 +263,7 @@ export default function HomePage() {
                 <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: '#5eead4' }}></span>
               </span>
               <Sparkles size={11} />
-              LandfillMind · 智能体 v4.2
+              LandfillMind · 智能体 v4.4
             </motion.div>
 
             {/* 主标题（渐变文字 + 强对比） */}
@@ -757,7 +757,7 @@ export default function HomePage() {
       {/* ===== 页脚 ===== */}
       <footer className="border-t text-center py-5" style={{ borderColor: 'var(--border)' }}>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          LandfillMind · 填埋场全周期智能体 v4.2 · 基于 CodeBuddy Agent SDK · 第一届"海之子"杯 AI 智能体挑战计划参赛作品
+          LandfillMind · 填埋场全周期智能体 v4.4 · 基于 CodeBuddy Agent SDK · 第一届"海之子"杯 AI 智能体挑战计划参赛作品
         </p>
       </footer>
     </div>
