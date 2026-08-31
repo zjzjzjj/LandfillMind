@@ -1,7 +1,7 @@
 {
   "name": "landfillmind",
-  "version": "4.4.0",
-  "description": "LandfillMind · 填埋场全周期智能体 v4.4 — 填埋场/地下水污染场地 AI 智能诊断系统",
+  "version": "4.5.0",
+  "description": "LandfillMind · 填埋场全周期智能体 v4.5 — 填埋场/地下水污染场地 AI 智能诊断系统",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

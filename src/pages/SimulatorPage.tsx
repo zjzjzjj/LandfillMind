@@ -8,6 +8,7 @@ import type { GeoParams, LandfillApi, SceneQuality } from '../components/Landfil
 const LandfillScene3D = lazy(() => import('../components/LandfillScene3D'));
 import { buildSimSnapshotMarkdown, downloadDataUrl, downloadJSON, downloadText, timestampName } from '../utils/exporter';
 import { SensorPanel } from '../components/SensorPanel';
+import { SceneChatPanel } from '../components/SceneChatPanel';
 
 const STORAGE_KEY = 'sim-geo-v2'; // v2: scale factor 范围重构（v1 的 10-60 m 工程值作废）
 
@@ -142,6 +143,22 @@ export default function SimulatorPage() {
   const exportMd = () => downloadText(timestampName('三维模拟快照', 'md'), buildSimSnapshotMarkdown(geo, estimates));
   const exportJson = () => downloadJSON(timestampName('三维模拟快照', 'json'), { params: geo, estimates });
 
+  // 3D 助手 OGS 结果注入：场景可能因 geo 变化正在重建，轮询等 apiRef 就绪
+  const applyOgsResult = (scenario: string, series: Array<{ varName?: string; points: { t: number; v: number }[] }>, label: string) => {
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries++;
+      if (sceneApi.current) {
+        clearInterval(timer);
+        sceneApi.current.applyOgsResult(scenario, series);
+        setLinkInfo(label);
+        setTimeout(() => setLinkInfo(null), 10000);
+      } else if (tries > 40) {
+        clearInterval(timer);
+      }
+    }, 250);
+  };
+
   return (
     <div className="flex-1 overflow-hidden flex flex-col" style={{ backgroundColor: 'var(--bg-base)' }}>
       {/* 页面标题 */}
@@ -252,6 +269,10 @@ export default function SimulatorPage() {
               <div className="pointer-events-auto">
                 <SensorPanel />
               </div>
+            </div>
+            {/* AI 建模助手：对话建模 + 计算 + OGS（右下角悬浮） */}
+            <div className="absolute bottom-3 right-3 z-20">
+              <SceneChatPanel currentGeo={geo} onApplyGeo={setGeo} onOgsResult={applyOgsResult} />
             </div>
           </div>
           {linkInfo && (

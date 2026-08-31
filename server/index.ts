@@ -30,6 +30,7 @@ import { calcRouter, CALC_REGISTRY } from './routes/calc.js';
 import { ogsRouter } from './routes/ogs.js';
 import { kbRouter } from './routes/kb.js';
 import { iotRouter } from './routes/iot.js';
+import { handleSceneChat } from './scene-chat.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -849,6 +850,20 @@ app.use(ogsRouter());
 app.use(kbRouter());
 app.use(iotRouter());
 
+    // ============ 3D 助手：仿真器内嵌 AI 对话（建模 + 计算 + OGS 联动） ============
+    app.post('/api/scene/chat', async (req, res) => {
+      const { message, currentGeo } = req.body ?? {};
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ ok: false, error: '缺少 message 参数' });
+      }
+      try {
+        const result = await handleSceneChat(message, currentGeo ?? {});
+        res.json(result);
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: e?.message ?? '3D 助手异常' });
+      }
+    });
+
 // ============ /api/* 404 JSON 兜底（防止 SPA fallback 返回 HTML 让前端 fetch JSON.parse 报错） ============
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: '未找到该接口' });
@@ -912,7 +927,7 @@ async function bootstrap() {
       ? 'CodeBuddy（主）' + (cfg ? ` + ${cfg.label}（备）` : '')
       : cfg ? `${cfg.label}（${cfg.model}）` : '未配置（请在 .env 填入 API Key）';
 
-    console.log(`\n  LandfillMind · 填埋场全周期智能体 v4.4 后端已启动`);
+    console.log(`\n  LandfillMind · 填埋场全周期智能体 v4.5 后端已启动`);
     console.log(`  端口: http://localhost:${PORT}`);
     console.log(`  模型: ${engine}`);
     console.log(`  静态托管: ${fs.existsSync(distPath) ? distPath : '未构建（开发模式走 Vite 代理）'}`);

@@ -8,6 +8,8 @@
  */
 
 import { useSensors, type SensorReading, SENSOR_KEYS, SENSOR_META } from '../hooks/useSensors';
+import { ChevronDown, ChevronUp, Radio } from 'lucide-react';
+import { useState } from 'react';
 
 const LEVEL_COLOR: Record<string, { bg: string; border: string; text: string; dot: string; label: string }> = {
   green:  { bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.5)',  text: '#10b981', dot: '#10b981', label: '正常' },
@@ -84,6 +86,31 @@ export function SensorPanel({ sensors: externalSensors, isConnected: externalCon
   const local = useSensors();
   const sensors = externalSensors ?? local.sensors;
   const isConnected = externalConn ?? local.isConnected;
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
+    // 收起态：一行紧凑摘要（连接状态 + 5 色点 + 展开按钮）
+    return (
+      <div
+        className="rounded-xl border px-3 py-2 flex items-center gap-2.5 backdrop-blur-sm cursor-pointer select-none"
+        style={{ background: 'rgba(15,23,42,0.85)', borderColor: 'var(--border)' }}
+        onClick={() => setCollapsed(false)}
+        title="展开实时监测"
+      >
+        <Radio size={13} style={{ color: isConnected ? '#10b981' : '#94a3b8' }} />
+        <span className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>实时监测</span>
+        <span className="flex gap-1">
+          {SENSOR_KEYS.map(k => {
+            const r = sensors[k];
+            const c = r ? LEVEL_COLOR[r.level] : LEVEL_COLOR.green;
+            return <span key={k} className="w-1.5 h-1.5 rounded-full" style={{ background: r ? c.dot : '#94a3b8' }} />;
+          })}
+        </span>
+        <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{isConnected ? '已连接' : '离线'}</span>
+        <ChevronUp size={13} style={{ color: 'var(--text-muted)' }} />
+      </div>
+    );
+  }
 
   if (compact) {
     return (
@@ -123,6 +150,16 @@ export function SensorPanel({ sensors: externalSensors, isConnected: externalCon
         <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
           {isConnected ? '已连接' : '离线'}
         </span>
+        <button
+          onClick={() => setCollapsed(true)}
+          className="flex items-center gap-0.5 text-[10px] rounded px-1 py-0.5 border transition-colors"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+          title="收起实时监测"
+        >
+          <ChevronDown size={11} /> 收起
+        </button>
       </div>
 
       {/* 5 个传感器卡片 */}
