@@ -9,6 +9,7 @@
 import {
   buildScene, DEFAULT_NL_PARSER, hasSceneIntent, cnToNum,
 } from './scene-builder.js';
+import { estimateSite, DEFAULT_GEO, GEO_PRESETS } from '../src/components/LandfillScene3D/geo.js';
 
 let passed = 0;
 let failed = 0;
@@ -148,6 +149,26 @@ async function main() {
     expect(Number.isFinite(r.geo.pileHeight) && r.geo.pileHeight === 1, 'NaN pileHeight → 过滤回默认 1');
     expect(r.geo.volumeScale === 2, '有限数字 volumeScale 保留');
     expect(!r.snapshot.desc.includes('NaN'), 'snapshot 不含 NaN', r.snapshot.desc);
+  }
+
+  console.log('▶ 库容标定（v4.5 回归：默认≈500 万 m³，随几何联动）');
+  {
+    const wan = (v: string) => parseFloat(v);
+    const def = estimateSite(DEFAULT_GEO);
+    expect(Math.abs(wan(def.volumeWanM3) - 500) <= 1, '默认几何 → 设计库容 ≈ 500 万 m³', def.volumeWanM3);
+    // 缓坡山谷型 500万：谷宽 1.2 × 堆高 0.7 × 库容系数 1.0 → ≈504 万
+    const slope = estimateSite({ valleyWidth: 1.2, pileHeight: 0.7, volumeScale: 1.0 });
+    expect(Math.abs(wan(slope.volumeWanM3) - 504) <= 5, '缓坡山谷 500万 → ≈504 万 m³', slope.volumeWanM3);
+    // 大型场预设 → 库容显著大于默认
+    const large = estimateSite(GEO_PRESETS.find(p => p.key === 'large')!.geo);
+    expect(wan(large.volumeWanM3) > 1000, '大型场 → 库容 > 1000 万 m³', large.volumeWanM3);
+    // 调整堆体高度 → 库容联动增大
+    const taller = estimateSite({ pileHeight: 1.4 });
+    expect(Math.abs(wan(taller.volumeWanM3) - 700) <= 1, '堆高 1.4 → 库容 ≈ 700 万 m³', taller.volumeWanM3);
+    // 建 1000 万 m³ → volumeScale 2.0 → 库容 ≈ 1000 万
+    const thousand = estimateSite({ volumeScale: 2.0 });
+    expect(Math.abs(wan(thousand.volumeWanM3) - 1000) <= 1, 'volumeScale 2.0 → 库容 ≈ 1000 万 m³', thousand.volumeWanM3);
+    expect(def.desc.includes('500 万 m³'), 'desc 默认含 500 万 m³', def.desc.slice(0, 40));
   }
 
   console.log(`\n${passed} 通过 / ${failed} 失败`);

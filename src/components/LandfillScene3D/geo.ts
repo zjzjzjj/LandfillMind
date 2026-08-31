@@ -62,19 +62,22 @@ export interface SiteEstimate {
  */
 export function estimateSite(geo: Partial<GeoParams> | undefined): SiteEstimate {
   const g = clampGeo({ ...DEFAULT_GEO, ...(geo ?? {}) });
-  // 简化解析式：默认模型约 220m × 132m × 26m ≈ 75.5 万 m³，按 volumeScale 线性缩放；占地按谷宽 × 堆高 ≈ 29000 m²
-  const baseVolWan = 75.5;
+  // 库容标定（v4.5 修正）：默认几何（谷宽 1×、堆高 1×、volumeScale 1.0）≈ 500 万 m³ 设计库容，
+  // 与 scene-builder 解析器基准（volWan / 500 → volumeScale）完全一致。
+  // 库容随谷底面积（谷宽²）× 堆高 × 库容系数实时联动：调整模型即见库容变化（物理口径）。
+  const baseVolWan = 500;
   const baseAreaHm2 = 2.9;
-  const volWan = (baseVolWan * g.volumeScale).toFixed(0);
-  const areaHm2 = (baseAreaHm2 * g.valleyWidth).toFixed(1);
+  const volWan = baseVolWan * g.valleyWidth * g.valleyWidth * g.pileHeight * g.volumeScale;
+  const areaHm2 = baseAreaHm2 * g.valleyWidth * g.valleyWidth;
   const desc =
     '类型：山谷型生活垃圾卫生填埋场（参数化缩放）\n' +
-    `总库容：约 ${volWan} 万 m³（含标定系数 ${g.volumeScale.toFixed(2)} ×）\n` +
-    `占地：约 ${areaHm2} hm²\n` +
+    `设计库容：约 ${volWan.toFixed(0)} 万 m³（库容系数 ${g.volumeScale.toFixed(2)} ×）\n` +
+    `占地：约 ${areaHm2.toFixed(1)} hm²\n` +
     `谷宽缩放：${g.valleyWidth.toFixed(2)} ×，堆高缩放：${g.pileHeight.toFixed(2)} ×\n` +
     `坝高缩放：${g.damHeight.toFixed(2)} ×，井距缩放：${g.gasWellSpacing.toFixed(2)} ×\n` +
-    `池容缩放：${g.pondVolume.toFixed(2)} ×，植被密度：${g.treeDensity.toFixed(2)}，车辆：${g.vehicleCount} 台`;
-  return { volumeWanM3: volWan, areaHm2, desc };
+    `池容缩放：${g.pondVolume.toFixed(2)} ×，植被密度：${g.treeDensity.toFixed(2)}，车辆：${g.vehicleCount} 台\n` +
+    '（库容为设计值，随谷宽²×堆高×库容系数联动；3D 示意模型按比例缩放）';
+  return { volumeWanM3: volWan.toFixed(0), areaHm2: areaHm2.toFixed(1), desc };
 }
 
 // ---------------- LandfillApi 接口（与组件同模块导出，便于导入） ----------------
