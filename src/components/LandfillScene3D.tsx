@@ -155,7 +155,7 @@ interface SkyPreset {
   fogColor: number; bgColor: number;
 }
 const TIME_PRESETS: Record<TimeOfDay, SkyPreset> = {
-  day:   { skyTop: 0x6fa8dc, skyBottom: 0xd7e4ef, sunColor: 0xfff2dd, sunIntensity: 2.3, ambientSky: 0xbfd7ea, ambientGround: 0x6a7f56, ambientIntensity: 0.95, fogColor: 0xd7e4ef, bgColor: 0xd7e4ef },
+  day:   { skyTop: 0x6fa8dc, skyBottom: 0xd7e4ef, sunColor: 0xfff2dd, sunIntensity: 2.5, ambientSky: 0xbfd7ea, ambientGround: 0x6a7f56, ambientIntensity: 0.95, fogColor: 0xd7e4ef, bgColor: 0xd7e4ef },
   dusk:  { skyTop: 0xe88c4d, skyBottom: 0xf6d1a3, sunColor: 0xffb37a, sunIntensity: 2.0, ambientSky: 0xf6b07a, ambientGround: 0x7a5a3a, ambientIntensity: 0.75, fogColor: 0xf6d1a3, bgColor: 0xf6d1a3 },
   night: { skyTop: 0x0a1428, skyBottom: 0x1a2640, sunColor: 0xb8c8e0, sunIntensity: 0.45, ambientSky: 0x4060a0, ambientGround: 0x1a2030, ambientIntensity: 0.35, fogColor: 0x1a2640, bgColor: 0x1a2640 },
 };
@@ -549,16 +549,36 @@ export default function LandfillScene3D({
     }
     const preset = TIME_PRESETS[timeOfDay];
     scene.background = new THREE.Color(preset.bgColor);
+    // 距离雾：远景山体/地面柔化，增强纵深与大气感（天空/云不受影响）
+    scene.fog = new THREE.Fog(preset.fogColor, 520, 2100);
     // 天空穹顶渐变 + 低多边形云（参考 V6 参考模型）
     {
+      // 天空：地平线过渡带 + 太阳辉光（日/昏有辉光，夜间太阳在地平线下无辉光）
+      const sunDirVec = timeOfDay === 'day' ? new THREE.Vector3(0.42, 0.82, 0.30).normalize()
+        : timeOfDay === 'dusk' ? new THREE.Vector3(0.72, 0.12, 0.30).normalize()
+        : new THREE.Vector3(0.0, -0.4, 0.2);
       const skyMat = new THREE.ShaderMaterial({
         side: THREE.BackSide, depthWrite: false, fog: false,
         uniforms: {
           top: { value: new THREE.Color(preset.skyTop) },
+          mid: { value: new THREE.Color(preset.skyBottom).lerp(new THREE.Color(preset.skyTop), timeOfDay === 'night' ? 0.25 : 0.5) },
           bottom: { value: new THREE.Color(preset.skyBottom) },
+          sunDir: { value: sunDirVec },
+          sunGlow: { value: new THREE.Color(preset.sunColor).multiplyScalar(timeOfDay === 'night' ? 0.15 : 0.8) },
         },
         vertexShader: 'varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'varying vec3 vPos; uniform vec3 top; uniform vec3 bottom; void main(){ float t = pow(clamp(normalize(vPos).y, 0.0, 1.0), 0.6); gl_FragColor = vec4(mix(bottom, top, t), 1.0); }',
+        fragmentShader: [
+          'varying vec3 vPos; uniform vec3 top; uniform vec3 mid; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 sunGlow;',
+          'void main(){',
+          '  vec3 d = normalize(vPos);',
+          '  float h = smoothstep(-0.02, 0.14, d.y);',
+          '  vec3 sky = mix(bottom, mid, h);',
+          '  sky = mix(sky, top, pow(clamp(d.y, 0.0, 1.0), 0.6));',
+          '  float s = max(dot(d, sunDir), 0.0);',
+          '  sky += sunGlow * (pow(s, 45.0) * 1.0 + pow(s, 10.0) * 0.22 + pow(s, 3.0) * 0.06);',
+          '  gl_FragColor = vec4(sky, 1.0);',
+          '}',
+        ].join('\n'),
       });
       const sky = new THREE.Mesh(new THREE.SphereGeometry(1900, 24, 16), skyMat);
       sky.renderOrder = -10;
@@ -589,6 +609,27 @@ export default function LandfillScene3D({
       bloom = new UnrealBloomPass(new THREE.Vector2(width, heightPx), 0.55, 0.6, 0.85);
       composer.addPass(bloom);
     }
+    // 色彩润色：轻微提饱和 + 暗角（电影感）
+    const gradePass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        uSaturation: { value: 1.12 },
+        uVignette: { value: 0.22 },
+      },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: [
+        'varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uSaturation; uniform float uVignette;',
+        'void main(){',
+        '  vec4 c = texture2D(tDiffuse, vUv);',
+        '  float luma = dot(c.rgb, vec3(0.299, 0.587, 0.114));',
+        '  vec3 col = mix(vec3(luma), c.rgb, uSaturation);',
+        '  float d = length(vUv - 0.5);',
+        '  col *= 1.0 - uVignette * smoothstep(0.42, 0.82, d);',
+        '  gl_FragColor = vec4(col, c.a);',
+        '}',
+      ].join('\n'),
+    });
+    composer.addPass(gradePass);
     composer.addPass(new OutputPass());
 
     const hemi = new THREE.HemisphereLight(preset.ambientSky, preset.ambientGround, preset.ambientIntensity); scene.add(hemi);
@@ -1123,7 +1164,13 @@ export default function LandfillScene3D({
       const m = o as THREE.Mesh;
       if (m.isMesh && m.geometry instanceof THREE.PlaneGeometry && (m.material as THREE.MeshStandardMaterial)?.color?.getHex() === 0x4a94bd) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { uTime: waterUniforms.uTime, uLevel: waterUniforms.uLevel, uColor: { value: new THREE.Color(0x4a94bd) }, uOpacity: { value: 0.85 } },
+          uniforms: {
+            uTime: waterUniforms.uTime, uLevel: waterUniforms.uLevel,
+            uColor: { value: new THREE.Color(0x3f8fb8) },
+            uOpacity: { value: 0.82 },
+            uSkyColor: { value: new THREE.Color(preset.skyBottom) },
+            uSunColor: { value: new THREE.Color(preset.sunColor).multiplyScalar(timeOfDay === 'night' ? 0.35 : 1.0) },
+          },
           transparent: true,
           vertexShader: `
             uniform float uTime; uniform float uLevel;
@@ -1142,18 +1189,23 @@ export default function LandfillScene3D({
           `,
           fragmentShader: `
             uniform vec3 uColor; uniform float uOpacity; uniform float uLevel; uniform float uTime;
+            uniform vec3 uSkyColor; uniform vec3 uSunColor;
             varying vec2 vUv;
             void main() {
               vec2 c = vUv - 0.5;
               float r = length(c);
-              float edge = smoothstep(0.5, 0.46, r);
-              // 水面波光
-              float sparkle = sin(vUv.x * 60.0 + uTime * 3.0) * sin(vUv.y * 50.0 - uTime * 2.0);
-              sparkle = smoothstep(0.7, 1.0, sparkle) * 0.25;
-              // 液位色阶：低=深蓝、高=绿→黄（溢出感）
-              vec3 high = vec3(0.85, 0.75, 0.30);
-              vec3 col = mix(uColor, high, smoothstep(0.6, 0.95, uLevel));
-              col += vec3(sparkle);
+              float edge = smoothstep(0.5, 0.44, r);
+              // 波光：高频闪烁 + 低频涌动
+              float w1 = sin(vUv.x * 70.0 + uTime * 3.0) * sin(vUv.y * 55.0 - uTime * 2.2);
+              float w2 = sin((vUv.x + vUv.y) * 26.0 - uTime * 1.6);
+              float sparkle = smoothstep(0.65, 0.98, w1) * 0.22 + smoothstep(0.85, 1.0, w2) * 0.12;
+              // 菲涅尔：边缘掠射角反射天空色（水感更真实）
+              float fres = pow(clamp(0.55 + r, 0.0, 1.0), 2.0) * 0.5;
+              vec3 base = mix(uColor, uSkyColor, fres);
+              // 液位色阶：低=深、高=偏黄（溢出警示）
+              vec3 high = vec3(0.85, 0.72, 0.26);
+              vec3 col = mix(base, high, smoothstep(0.6, 0.95, uLevel));
+              col += vec3(sparkle) * uSunColor;
               gl_FragColor = vec4(col, uOpacity * edge);
             }
           `,
