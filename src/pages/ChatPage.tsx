@@ -6,6 +6,7 @@ import { useDetailPref } from '../utils/detailPref';
 import { buildChatMarkdown, downloadJSON, downloadText, timestampName } from '../utils/exporter';
 import { EXPERT_LABELS } from '../utils/expertPrompts';
 import { FeedbackWidget } from '../components/FeedbackWidget';
+import { SCENE_BUILT_KEY, writeSceneBuilt } from '../components/LandfillScene3D/geo';
 
 // ========================
 // 知识库检索增强 / 工程计算内核 卡片
@@ -14,19 +15,20 @@ import { FeedbackWidget } from '../components/FeedbackWidget';
 //   type 字段（'kb' / 'calc'）由后端显式回传（kind）——UI 据此分类渲染。
 // ========================
 function ToolCallCard({ tc }: { tc: ToolCall }) {
-  const [open, setOpen] = useState(false);
-  const statusColor = tc.status === 'success' ? '#10b981' : tc.status === 'error' ? '#ef4444' : '#06b6d4';
-
-  // 类型归类：type 优先（后端显式标注），否则按 name 推断兼容旧数据
-  const kind: 'kb' | 'calc' | 'ogs' = tc.type
-    ?? (tc.name === 'kb_lookup' ? 'kb'
+  // scene（AI 生成 3D 场景）默认展开——这是核心演示功能，折叠会让评审/用户误以为没生成
+  const kind: 'kb' | 'calc' | 'ogs' | 'scene' = tc.type
+    ?? (tc.name === 'buildScene' ? 'scene'
+      : tc.name === 'kb_lookup' ? 'kb'
       : tc.name === 'ogs_sim' ? 'ogs'
       : tc.name === 'calculate' || tc.name === 'run_diagnosis' ? 'calc'
       : 'kb');
+  const [open, setOpen] = useState(() => kind === 'scene');
+  const statusColor = tc.status === 'success' ? '#10b981' : tc.status === 'error' ? '#ef4444' : '#06b6d4';
 
   // 标题与图标按类型分类
   const headerLabel = kind === 'kb' ? '🔍 知识库检索增强'
     : kind === 'ogs' ? '🌐 稳定化计算（OpenGeoSys 有限元求解）'
+    : kind === 'scene' ? '🏗 AI 生成 3D 场景'
     : '⚙ 工程计算（确定性内核）';
 
   // KB 输出：把 entries 的 ref / clause 单独渲染为可点击引用徽章
@@ -52,6 +54,14 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
   if (kind === 'ogs' && tc.output !== undefined) {
     try {
       ogsResult = typeof tc.output === 'string' ? JSON.parse(tc.output) : tc.output;
+    } catch { /* 非 JSON 时退回到通用结果区 */ }
+  }
+
+  // AI 生成 3D 场景输出：BuiltScene（geo / preset / snapshot / ogSummary）
+  let sceneResult: any = null;
+  if (kind === 'scene' && tc.output !== undefined) {
+    try {
+      sceneResult = typeof tc.output === 'string' ? JSON.parse(tc.output) : tc.output;
     } catch { /* 非 JSON 时退回到通用结果区 */ }
   }
 
@@ -170,6 +180,43 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
                 </div>
               )}
 
+              {/* AI 生成 3D 场景：BuiltScene 卡片（库容快照 + OGS 联动 + 打开仿真器） */}
+              {kind === 'scene' && sceneResult && (
+                <div className="space-y-1.5">
+                  {sceneResult.snapshot?.desc && (
+                    <pre className="text-[11px] font-mono whitespace-pre-wrap rounded-lg p-2"
+                         style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+                      {sceneResult.snapshot.desc}
+                    </pre>
+                  )}
+                  {sceneResult.ogSummary && (
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      🔥 联动稳定化计算：{sceneResult.ogSummary.scenario} 峰值{' '}
+                      <span className="font-mono">{sceneResult.ogSummary.peakValue}{sceneResult.ogSummary.unit}</span>
+                    </p>
+                  )}
+                  <button
+                    onClick={() => {
+                      try {
+                        writeSceneBuilt({
+                          geo: sceneResult.geo,
+                          preset: sceneResult.preset,
+                          snapshot: sceneResult.snapshot,
+                          ogSummary: sceneResult.ogSummary,
+                          navigateTo: '/3d-simulator',
+                        });
+                      } catch { /* ignore */ }
+                      window.open('/3d-simulator', '_blank');
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-full border transition-colors"
+                    style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                    title="按 AI 生成的参数跳转三维仿真器渲染"
+                  >
+                    🏔 打开 3D 仿真器 →
+                  </button>
+                </div>
+              )}
+
               {/* 检索关键词（KB） / 计算入参（计算） / 模拟参数（OGS） */}
               {tc.input && Object.keys(tc.input).length > 0 && (
                 <div>
@@ -184,7 +231,7 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
               )}
 
               {/* 兜底：无法解析时仍显示原始 output */}
-              {((kind === 'kb' && !kbEntries) || (kind === 'calc' && !calcSummary) || (kind === 'ogs' && !ogsResult)) && tc.output !== undefined && (
+              {((kind === 'kb' && !kbEntries) || (kind === 'calc' && !calcSummary) || (kind === 'ogs' && !ogsResult) || (kind === 'scene' && !sceneResult)) && tc.output !== undefined && (
                 <div>
                   <p className="text-[10px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>结果</p>
                   <pre className="text-[11px] font-mono whitespace-pre-wrap rounded-lg p-2"

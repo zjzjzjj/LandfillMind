@@ -32,8 +32,8 @@ export interface FollowUpItem {
 export interface ToolCall {
   id: string;
   name: string;
-  /** 归类：'kb' = 知识库检索增强，'calc' = 工程计算（确定性内核），'ogs' = 稳定化计算，undefined = 兼容旧数据 */
-  type?: 'kb' | 'calc' | 'ogs';
+  /** 归类：'kb' = 知识库检索增强，'calc' = 工程计算（确定性内核），'ogs' = 稳定化计算，'scene' = AI 生成 3D 场景，undefined = 兼容旧数据 */
+  type?: 'kb' | 'calc' | 'ogs' | 'scene';
   input: Record<string, unknown>;
   output?: unknown;
   status: 'running' | 'success' | 'error';

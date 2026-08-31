@@ -460,6 +460,12 @@ export const AGENT_TOOL_USAGE = `
    - 输入：SiteData 对象（含 land 长宽高、井、水位、沉降、H2S、CH4 等）
    - 返回：hazards[]、overallRisk、priorityActions[]
 
+4. \`buildScene(intent: { kind: 'preset' | 'custom' | 'natural', key?: string, geo?: object, text?: string })\`
+   - 用途：**3D 场景生成**。用户要求"建/生成/创建 3D 场景、填埋场模型、调整堆体/坝/井/池参数"时调用
+   - intent.kind：'preset'（key 填 small/large）/'custom'（geo 填 GeoParams 子集）/'natural'（text 填自然语言，如"缓坡山谷型 500 万 m³ 的填埋场"，推荐）
+   - **何时必须调用**：用户表达建场意图（含"建/生成/改 3D、堆体、库容、坝、山谷"等词）时
+   - 联动：用户同时要求产气/沉降/降解模拟时，intent 同级加 injectOgs=true 与 ogsScenario='gas-production'|'settlement'|'degradation'
+
 【铁律】
 - 涉及规范条文编号（如 GB 16889 §5.1）必须调用 \`kb_lookup\` 获取，禁止凭空捏造
 - 涉及数值（Fs / k_eq / 产气量 / 沉降）必须调用对应 \`calculate\`，禁止估算后写为"约 X"

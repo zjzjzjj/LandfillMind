@@ -1,5 +1,78 @@
 # Changelog · LandfillMind 填埋场全周期智能体
 
+## v4.4（2026-08-31 · IoT 实时传感器 + 3D 渲染增强 + broker 启动修复）
+
+> **数字孪生感知层落地：** 3D 仿真器右上角新增实时 IoT 传感器面板（嵌入式 MQTT broker + 5 个 mock 传感器），CH₄/H₂S/水位/沉降/温度五维数据流实时推送，按规范阈值自动分级（绿/黄/橙/红）。
+
+### a. 新增能力
+
+- **IoT 实时数据流（server/iot.ts + src/hooks/useSensors.ts + src/components/SensorPanel.tsx，全新）**
+  - 嵌入式 aedes MQTT broker：动态端口探测（默认 1886，被占自动 +1）
+  - 5 个 mock 传感器按真实量级定时发布：CH₄(%LEL) / H₂S(ppm) / 渗压水位(m) / 沉降(mm/d) / 堆体温度(℃)，含告警/危险阈值分级
+  - 双端点：`/api/iot/snapshot`（首屏快照）+ `/api/iot/stream`（SSE 实时流，15s 心跳保活）
+  - 前端 SensorPanel 悬浮于 3D 仿真器右上角：数值 + 风险色卡 + 连接状态 + 相对时间
+- **3D 渲染电影感增强（src/components/LandfillScene3D.tsx）**
+  - IBL 环境光：PMREMGenerator + RoomEnvironment 程序生成，PBR 材质即时反射，0 网络依赖
+  - UnrealBloomPass 辉光：火炬/告警灯真实发光 + OutputPass 色调映射/sRGB 校正
+  - 动画循环与截图导出统一走 composer 管线；resize 同步适配
+- **测试**：`npm run test:iot`（10 条断言：阈值分级边界 / 数据形态 / 快照完整性 / 发布订阅回放 / 优雅关闭）
+
+### b. 修复（P0 · broker 启动挂死）
+
+- **aedes 1.x 必须经 `Aedes.createBroker()` 初始化**：原 `new Aedes()` 未初始化 persistence，broker 接受 TCP 连接但**不响应 MQTT 握手** → mock 发布端永远连不上 → `startIotBroker` 挂死 → **整个服务启动被卡死**。已改为 `createBroker()`，并给发布端连接加 3s 超时兜底（broker 异常时降级为快照数据流，不阻塞服务）。
+- 版本号统一为 v4.4（package.json / README / 后端启动横幅）
+- iot.ts 端口注释修正（1884 → 默认 1886）
+
+### c. 演示路径
+
+```
+打开「3D 仿真器」→ 右上角实时监测面板：5 个传感器数值/风险色/连接状态实时跳动
+"建一个缓坡山谷型 500 万 m³ 的填埋场" → AI 生成 3D 场景卡片 → 跳转渲染
+```
+
+## v4.3（2026-08-30 · AI 生成 3D 场景 · buildScene 落地）
+
+> **差异化创新：说话就能建 3D 场。** 用户在专家问答里输入"建一个缓坡山谷型 500 万 m³ 的填埋场"，系统即把自然语言/结构化参数解析为 8 维几何参数（GeoParams），一键跳转三维仿真器渲染；可选同步触发稳定化计算（OGS）并把产气峰值注入场景卡片。
+
+### a. 新增能力
+
+- **AI 生成 3D 场景（server/scene-builder.ts，全新）**
+  - 三态意图：`preset`（small/large 预设）/ `custom`（GeoParams 子集）/ `natural`（自然语言推荐）
+  - 确定性规则解析器 `DEFAULT_NL_PARSER`（兜底 + 兼容通道主引擎）：
+    - 斜坡比映射：`1:3` → 缓坡堆高 0.8×，`1:2` → 陡坡 1.4×
+    - 中文数字：`五百万 m³` → volumeScale≈1.0
+    - key=value 自定义：`谷宽=1.5 堆高=1.6`
+    - 规模词：小型 0.3× / 大型 1.6× 等 8 维全覆盖
+  - 输出永远过 `clampGeo`（绝不越界，验收 A5）；OGS 失败静默（不阻塞、不报错，验收 A4）
+- **双通道接入（server/index.ts）**
+  - **兼容通道（GLM/OpenRouter，默认）**：`hasSceneIntent` 保守判定 + 规则解析 → SSE 回放 `tool_call`(kind:'scene') + `tool_result`，无需真 function calling
+  - **CodeBuddy SDK 通道**：`tools[]` 新增 `buildScene` 结构化工具体（含 8 维参数范围 schema），真 function calling 执行后回放
+  - `runOgScenarioSummary`：跑 OGS 场景抽**速率系列日峰值**（gas 命中 ch4_rate=899 万m³/d / settlement 命中 -0.0199 m 最大沉降 / degradation 25.8 kg/m³，均与 OGS 黄金值一致）
+- **前端**
+  - `ChatPage` tool 卡片新增 **🏗 AI 生成 3D 场景** 类型：展示库容快照 + OGS 联动峰值 + "🏔 打开 3D 仿真器 →" 按钮
+  - `SimulatorPage` 消费 `scene-built-v1` 跨页信令：跳转后按生成参数重建 3D + 顶部提示"🪄 AI 已生成…场景"
+  - `src/types.ts` ToolCall.type 扩展 `'scene'`
+- **测试**
+- `npm run test:scene`：47 条断言（预设/clamp/natural/OGS 成败/中文数字/亿级/斜坡比/key=value/意图判定/疑问句拦截/NaN 消毒/bogus 兜底），累计 47 通过 / 0 失败
+
+### b. 相对方案（E:\claude\LandfillMind-buildScene-Implementation-Plan.md）的修正
+
+1. **文件指针修正**：本仓库的真正结构化 tools 数组在 `server/index.ts`（非 `prompts.ts`），`prompts.ts` 仅有文本工具约定 → 两处都已同步追加 buildScene
+2. **默认通道补齐（评审关键）**：`/api/chat` 实际优先走 `handleCompatChat`（GLM/OpenRouter），原方案只改了 CodeBuddy 通道会导致演示翻车 → 现已为 comppat 通道加规则解析 + SSE 回放，**无 CODEBUDDY 也能演示**
+3. **NL parser 增强**：补斜坡比 / 中文数字 / key=value / 翻转语序（"把堆体放缓到 1:3"）
+4. **OGS 峰值语义**：抽速率系列日峰（非累计最大值），避免"累计 16457 万m³"冒充日峰
+
+### c. 演示脚本（评审 90 秒）
+
+```
+"建一个缓坡山谷型 500 万 m³ 的填埋场"          → 山谷 1.2× + 缓坡 0.7× + 库容 500 万 → 卡片
+"把堆体放缓到 1:3"                             → pileHeight 0.8×（斜坡比规则）
+"重新建一个大库 + 同步算产气"                   → 大型 1.6× + OGS gas-production 峰值 899 万m³/d
+"自定义 valleyWidth=1.5, pileHeight=1.6"       → key=value 精确参数
+"bogus 文本"                                   → 默认场景兜底（不报错）
+"填埋场渗滤液怎么处理"                          → 不误触发（hasSceneIntent 判定）
+```
+
 ## v4.2（2026-08-18 · 评审前冲刺：12 项核心修复 + 2 项差异化创新）
 
 > 第一届"海之子"杯 AI 智能体挑战计划 · 评审前最后一轮迭代。相对于 v4.1.1 的全部改动：

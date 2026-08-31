@@ -1,7 +1,7 @@
 {
   "name": "landfillmind",
-  "version": "4.1.0",
-  "description": "LandfillMind · 填埋场全周期智能体 v4.2 — 填埋场/地下水污染场地 AI 智能诊断系统",
+  "version": "4.4.0",
+  "description": "LandfillMind · 填埋场全周期智能体 v4.4 — 填埋场/地下水污染场地 AI 智能诊断系统",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -10,6 +10,8 @@
     "build": "vite build",
     "typecheck": "tsc -b",
     "test:ogs": "tsx tests/ogs-models.test.ts",
+    "test:scene": "tsx server/scene-builder.test.ts",
+    "test:iot": "tsx server/iot.test.ts",
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "eval:agent": "tsx scripts/eval-agent.ts"
@@ -17,11 +19,13 @@
   "dependencies": {
     "@tencent-ai/agent-sdk": "^0.3.43",
     "@types/three": "^0.160.0",
+    "aedes": "^1.1.1",
     "dotenv": "^16.4.5",
     "echarts": "^6.1.0",
     "express": "^4.18.2",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
+    "mqtt": "^5.15.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.13.0",

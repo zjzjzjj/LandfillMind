@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import * as THREE from 'three';
+// Three.js 内置 IBL（RoomEnvironment 程序生成环境光，无需下载 HDRI）+ 后处理（Bloom）
+//   这些模块已经在 three 包内，零新依赖；提升 PBR 材质反射与火焰发光效果
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 // 类型/常量/工具：从同目录 geo.ts 导入，避免拖入整个模块
 import {
   DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite,
@@ -488,6 +496,14 @@ export default function LandfillScene3D({
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
+
+    // IBL：PMREMGenerator + RoomEnvironment 程序生成环境光贴图，所有 PBR 材质（堆体/设备/地形）
+    //   立刻反射真实环境光，无需下载 HDRI 文件——0 网络依赖，0 卡顿，瞬间提升金属/玻璃质感
+    {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+    }
     const preset = TIME_PRESETS[timeOfDay];
     scene.background = new THREE.Color(preset.bgColor);
     // 天空穹顶渐变 + 低多边形云（参考 V6 参考模型）
@@ -519,6 +535,15 @@ export default function LandfillScene3D({
     }
 
     const camera = new THREE.PerspectiveCamera(50, width / heightPx, 0.5, 4000);
+
+    // 后处理：EffectComposer + UnrealBloomPass 让火炬/告警灯真实发光电影感，
+    //   OutputPass 校正 tone mapping + sRGB 颜色空间（必须，否则颜色过曝/不饱和）
+    const composer = new EffectComposer(renderer);
+    composer.setSize(width, heightPx);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(width, heightPx), 0.55, 0.6, 0.85);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
 
     const hemi = new THREE.HemisphereLight(preset.ambientSky, preset.ambientGround, preset.ambientIntensity); scene.add(hemi);
     const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
@@ -1327,7 +1352,7 @@ export default function LandfillScene3D({
       applyClip,
       view,
       capturePng() {
-        renderer.render(scene, camera);
+        composer.render();
         return renderer.domElement.toDataURL('image/png');
       },
       startRoaming() {
@@ -1456,7 +1481,7 @@ export default function LandfillScene3D({
       // monitoring.leachateLevel 0.3..2.5m  →  uLevel 0..1
       waterUniforms.uLevel.value = Math.max(0, Math.min(1, (monitoringRef.current.leachateLevel - 0.3) / 2.0));
       doHover();
-      renderer.render(scene, camera);
+      composer.render();
     };
     animate();
 
@@ -1466,6 +1491,8 @@ export default function LandfillScene3D({
       heightPx = mount.clientHeight || height;
       camera.aspect = width / heightPx; camera.updateProjectionMatrix();
       renderer.setSize(width, heightPx);
+      composer.setSize(width, heightPx);
+      bloom.setSize(width, heightPx);
     };
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onResize) : null;
     if (ro) ro.observe(mount);
@@ -1492,6 +1519,9 @@ export default function LandfillScene3D({
         }
       });
       renderer.dispose();
+      composer.dispose();
+      // IBL 环境贴图 dispose（PMREM 输出）
+      if (scene.environment) scene.environment.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       apiRef.current = null;
       if (externalApiRef) externalApiRef.current = null;

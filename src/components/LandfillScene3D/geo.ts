@@ -89,3 +89,21 @@ export interface LandfillApi {
   /** 稳定化计算联动：把 OGS 场景结果（gas-production / settlement）注入场景 */
   applyOgsResult(scenario: string, series: Array<{ varName?: string; points: { t: number; v: number }[] }>): void;
 }
+
+// ============ 跨页信令：AI 生成的 3D 场景（scene-built，仿 scene-ogs 一次性信封） ============
+//   ChatPage 收到 buildScene 工具回执后写入，SimulatorPage 挂载时消费一次即移除。
+//   数据形状：{ geo, preset, snapshot, ogSummary?, navigateTo }（由 server/scene-builder 产出）
+export const SCENE_BUILT_KEY = 'scene-built-v1';
+
+export function writeSceneBuilt(payload: unknown): void {
+  try { sessionStorage.setItem(SCENE_BUILT_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
+}
+
+export function readSceneBuilt<T = unknown>(): T | null {
+  try {
+    const raw = sessionStorage.getItem(SCENE_BUILT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(SCENE_BUILT_KEY); // 读一次即消费
+    return JSON.parse(raw) as T;
+  } catch { return null; }
+}

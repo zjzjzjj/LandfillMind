@@ -2,11 +2,12 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Boxes, RotateCcw, Camera, FileDown, MessageCircle, Link2 } from 'lucide-react';
 // 常量/类型从纯模块 geo.ts 拿（不拉入 three.js）
-import { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite } from '../components/LandfillScene3D/geo';
+import { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite, readSceneBuilt } from '../components/LandfillScene3D/geo';
 import type { GeoParams, LandfillApi } from '../components/LandfillScene3D/geo';
 // 组件本体懒加载（~500KB three.js）
 const LandfillScene3D = lazy(() => import('../components/LandfillScene3D'));
 import { buildSimSnapshotMarkdown, downloadDataUrl, downloadJSON, downloadText, timestampName } from '../utils/exporter';
+import { SensorPanel } from '../components/SensorPanel';
 
 const STORAGE_KEY = 'sim-geo-v2'; // v2: scale factor 范围重构（v1 的 10-60 m 工程值作废）
 
@@ -76,6 +77,24 @@ export default function SimulatorPage() {
       }
     }, 250);
     return () => clearInterval(timer);
+  }, []);
+
+  // 消费 AI 生成的 3D 场景（ChatPage buildScene 回执 → 跳转 /3d-simulator 后按生成参数重建）
+  useEffect(() => {
+    const built = readSceneBuilt<{
+      geo?: Partial<GeoParams>;
+      preset?: string;
+      snapshot?: { desc?: string };
+      ogSummary?: { scenario?: string; peakValue?: number; unit?: string };
+    }>();
+    if (!built || !built.geo) return;
+    setGeo(clampGeo({ ...DEFAULT_GEO, ...built.geo }));
+    const head = built.snapshot?.desc?.split('\n')[0] ?? '';
+    setLinkInfo(
+      `🪄 AI 已生成${built.preset && built.preset !== 'default' ? `「${built.preset}」` : ''}场景：${head}` +
+      (built.ogSummary ? ` · 联动 OGS ${built.ogSummary.scenario ?? ''} 峰值 ${built.ogSummary.peakValue ?? ''}${built.ogSummary.unit ?? ''}` : '')
+    );
+    setTimeout(() => setLinkInfo(null), 12000);
   }, []);
 
   // 「询问 AI」：把当前场景参数 + 联动状态打包进对话预填
@@ -204,8 +223,14 @@ export default function SimulatorPage() {
 
         {/* 右侧：三维模型 + 导出工具栏 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <div ref={canvasWrap} className="flex-1 min-h-0 overflow-hidden">
+          <div ref={canvasWrap} className="flex-1 min-h-0 overflow-hidden relative">
             <LandfillScene3D height={canvasHeight} geoParams={geo} apiRef={sceneApi} />
+            {/* 实时 IoT 传感器面板：画布右上角悬浮（数字孪生"感知层"） */}
+            <div className="absolute top-3 right-3 z-20 w-72 pointer-events-none">
+              <div className="pointer-events-auto">
+                <SensorPanel />
+              </div>
+            </div>
           </div>
           {linkInfo && (
             <div className="shrink-0 px-5 py-2 border-b flex items-center gap-2 text-[11px]"

@@ -21,8 +21,10 @@ import { resolveCompat, resolveCfgForModel, resolveOpenRouter, resolveGlm, detai
 import { gaussian } from './calculate.js';
 
 import { initRetrieval } from './retrieval.js';
-import { buildChatAugmentation, summarizeConversation, detectCalcIntent } from './augment.js';
+import { buildChatAugmentation, summarizeConversation, detectCalcIntent, detectOgsIntent } from './augment.js';
 import { getOgsStatus, listOgsScenarios, runOgsScenario, getOgsRunFiles } from './ogs.js';
+import { buildScene, hasSceneIntent, isExplicitSceneRequest, DEFAULT_NL_PARSER } from './scene-builder.js';
+import { startIotBroker, stopIotBroker, snapshotReadings, onIotPublish } from './iot.js';
 import type { DetailLevel } from './llm.js';
 import type { CompatCfg } from './llm.js';
 import { generateFollowUp, FOLLOW_UP_GUIDES } from './followUp.js';
@@ -162,6 +164,30 @@ function friendlyModelName(id: string): string {
 }
 
 // ============ 通用 OpenAI 兼容 SSE 流式（OpenRouter 主 + GLM 直连备） ============
+/** 从 OGS 运行结果抽"时程峰值 + 单位"（供场景卡片展示；失败/空返回 null）
+ *  优先取速率系列（*_rate，如产气日峰），避免累计序列（*_cum）的最大值冒充"日峰"；
+ *  位移类（沉降向下为负）取绝对值最大，语义上指向"最大沉降" */
+function summarizeOgsResult(r: { ok: boolean; timeSeries?: Array<{ name?: string; varName?: string; unit?: string; points?: { t: number; v: number }[] }> }): { peakValue: number; unit: string } | null {
+  if (!r.ok || !r.timeSeries?.length) return null;
+  const nameAndUnit = (s: { name?: string; varName?: string; unit?: string }) => `${s.name ?? ''} ${s.varName ?? ''} ${s.unit ?? ''}`;
+  const rateSeries = r.timeSeries.find(s => /rate|速率|日峰/i.test(nameAndUnit(s))) ?? null;
+  const series = rateSeries ?? r.timeSeries[0];
+  const values = (series.points ?? []).map(p => p.v);
+  if (!values.length) return null;
+  const peak = values.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);
+  return { peakValue: peak, unit: series.unit ?? '' };
+}
+
+/** OGS 联动适配：跑一个稳定化计算场景，抽峰值（失败静默返回 null，容器内无求解器也不阻塞） */
+async function runOgScenarioSummary(scenario: string): Promise<{ peakValue: number; unit: string } | null> {
+  try {
+    const r = await runOgsScenario(scenario, {});
+    return summarizeOgsResult(r);
+  } catch {
+    return null;
+  }
+}
+
 async function handleCompatChat(req: express.Request, res: express.Response, primaryCfg: CompatCfg) {
   const { messages, model, systemPrompt, sessionId, detail } = req.body as {
     messages: any[]; model: string; systemPrompt?: string; sessionId?: string; detail?: DetailLevel;
@@ -298,6 +324,35 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
       res.write(`data: ${JSON.stringify({ type: 'tool_result', callId, name: 'ogs_sim', kind: 'ogs', output: JSON.stringify(aug.ogs.result) })}\n\n`);
     }
 
+    // AI 生成 3D 场景：兼容通道无真 function calling，走确定性规则解析（hasSceneIntent + DEFAULT_NL_PARSER）
+    //   显式建场请求（isExplicitSceneRequest）即使规则零命中也放行默认场景；非场景语 → 静默跳过
+    if (lastUserText && hasSceneIntent(lastUserText)) {
+      try {
+        const scenePartial = DEFAULT_NL_PARSER(lastUserText);
+        if (isExplicitSceneRequest(lastUserText) || (scenePartial && Object.keys(scenePartial).length)) {
+          const ogsIntent = detectOgsIntent(lastUserText);
+          // 去重：aug（buildChatAugmentation）已跑同一 OGS 场景则复用它，避免一请求算两遍并阻塞 LLM 流
+          const reuseSum = (aug.ogs && aug.ogs.input.scenario === ogsIntent?.scenario)
+            ? summarizeOgsResult(aug.ogs.result as any)
+            : null;
+          const built = await buildScene(
+            {
+              intent: { kind: 'natural', text: lastUserText },
+              injectOgs: !!ogsIntent,
+              ogsScenario: (ogsIntent?.scenario ?? undefined) as 'gas-production' | 'settlement' | 'degradation' | undefined,
+            },
+            { runOgs: reuseSum ? async () => reuseSum : runOgScenarioSummary },
+          );
+          const sceneCallId = uuidv4();
+          res.write(`data: ${JSON.stringify({ type: 'tool_call', callId: sceneCallId, name: 'buildScene', kind: 'scene', input: { intent: 'natural', text: lastUserText.slice(0, 120) } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'tool_result', callId: sceneCallId, name: 'buildScene', kind: 'scene', output: JSON.stringify({ ok: true, preset: built.preset, geo: built.geo, snapshot: built.snapshot, ogSummary: built.ogSummary ?? null, navigateTo: '/3d-simulator' }) })}\n\n`);
+        }
+      } catch (sceneErr: any) {
+        // 场景生成失败不阻塞聊天主流程（兼容通道本就无工具回执语义）
+        console.error('[scene-builder] compat 通道生成失败:', sceneErr?.message);
+      }
+    }
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -407,6 +462,29 @@ async function handleCodeBuddyChat(req: express.Request, res: express.Response) 
           description: '对填埋场/地下水场地进行双引擎诊断，返回风险等级和处置建议',
           input_schema: { type: 'object', properties: { data: { type: 'object' } }, required: ['data'] },
         },
+        {
+          name: 'buildScene',
+          description: 'AI 生成填埋场 3D 场景：根据用户自然语言/参数输出 8 维几何参数（GeoParams），可选联动稳定化计算（OGS），前端跳转 3D 仿真器渲染',
+          input_schema: {
+            type: 'object',
+            properties: {
+              intent: {
+                type: 'object',
+                description: '场景意图：preset(预设) / custom(自定义参数) / natural(自然语言)',
+                properties: {
+                  kind: { type: 'string', enum: ['preset', 'custom', 'natural'] },
+                  key: { type: 'string', enum: ['small', 'large', 'default'], description: 'preset 时必填' },
+                  geo: { type: 'object', description: 'custom 时填 GeoParams 子集（valleyWidth 0.6-1.6 / pileHeight 0.5-1.8 / pondVolume 0.4-2.2 / gasWellSpacing 0.6-1.5 / damHeight 0.5-2.0 / treeDensity 0.4-1.6 / vehicleCount 0-8 / volumeScale 0.2-2.2）' },
+                  text: { type: 'string', description: 'natural 时必填，例："缓坡山谷型 500 万 m³ 的填埋场"' },
+                },
+                required: ['kind'],
+              },
+              injectOgs: { type: 'boolean', description: '是否同步触发稳定化计算并联动 3D', default: false },
+              ogsScenario: { type: 'string', enum: ['gas-production', 'settlement', 'degradation'] },
+            },
+            required: ['intent'],
+          },
+        },
       ],
       stream: true,
       ...(permissionMode === 'acceptAll' ? { permission_mode: 'accept_all' } : {}),
@@ -442,6 +520,10 @@ async function handleCodeBuddyChat(req: express.Request, res: express.Response) 
             const cfg = resolveCompat();
             const result = await runDiagnosis(data ?? {}, cfg?.models ?? ['glm-4-flash-250414'], cfg?.apiKey ?? '', cfg?.baseUrl ?? 'https://openrouter.ai/api/v1');
             output = JSON.stringify(result);
+          } else if (event.name === 'buildScene') {
+            // AI 生成 3D 场景：LLM 结构化 intent → scene-builder → SSE 回放 scene 卡片
+            const built = await buildScene(event.input ?? {}, { runOgs: runOgScenarioSummary });
+            output = JSON.stringify({ ok: true, preset: built.preset, geo: built.geo, snapshot: built.snapshot, ogSummary: built.ogSummary ?? null, navigateTo: '/3d-simulator' });
           }
           res.write(`data: ${JSON.stringify({ type: 'tool_result', callId, output })}\n\n`);
         } catch (toolErr: any) {
@@ -1012,6 +1094,38 @@ app.get('/api/models', (_req, res) => {
   res.json({ models, active: getProvider() });
 });
 
+// ============ IoT 实时数据流 ============
+// GET /api/iot/snapshot — 当前 5 个传感器快照（首屏）
+app.get('/api/iot/snapshot', (_req, res) => {
+  res.json({ ts: new Date().toISOString(), readings: snapshotReadings() });
+});
+
+// GET /api/iot/stream — SSE：先推 snapshot，再订阅 aedes 'publish' 实时转发
+app.get('/api/iot/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  // 心跳保活（防反代断开）
+  const ka = setInterval(() => {
+    if (res.writableEnded) { clearInterval(ka); return; }
+    try { res.write(':keepalive\n\n'); } catch { clearInterval(ka); }
+  }, 15000);
+
+  // 1) 立即推 snapshot
+  res.write(`data: ${JSON.stringify({ type: 'snapshot', ts: new Date().toISOString(), readings: snapshotReadings() })}\n\n`);
+
+  // 2) 订阅实时数据
+  const off = onIotPublish((reading, topic) => {
+    if (res.writableEnded) return;
+    try {
+      res.write(`data: ${JSON.stringify({ type: 'reading', topic, ts: reading.ts, reading })}\n\n`);
+    } catch { /* ignore */ }
+  });
+
+  req.on('close', () => { clearInterval(ka); off(); });
+});
+
 // ============ 健康检查 ============
 app.get('/api/health', (_req, res) => {
   const cfg = resolveCompat();
@@ -1146,13 +1260,20 @@ let server: import('http').Server;
 
 async function bootstrap() {
   await dbReady; // initDb 已完成，表结构就绪
+  // IoT broker：嵌入式 MQTT（端口 1884）+ 5 个 mock 传感器定时推送
+  //  失败不阻塞 server 启动（演示中 broker 不可用不影响对话/3D 主流程）
+  try {
+    await startIotBroker();
+  } catch (e) {
+    console.error('[iot] broker 启动失败（继续运行，无 IoT 数据流）:', (e as Error).message);
+  }
   server = app.listen(PORT, () => {
     const cfg = resolveCompat();
     const engine = process.env.CODEBUDDY_API_KEY
       ? 'CodeBuddy（主）' + (cfg ? ` + ${cfg.label}（备）` : '')
       : cfg ? `${cfg.label}（${cfg.model}）` : '未配置（请在 .env 填入 API Key）';
 
-    console.log(`\n  LandfillMind · 填埋场全周期智能体 v4.2 后端已启动`);
+    console.log(`\n  LandfillMind · 填埋场全周期智能体 v4.4 后端已启动`);
     console.log(`  端口: http://localhost:${PORT}`);
     console.log(`  模型: ${engine}`);
     console.log(`  静态托管: ${fs.existsSync(distPath) ? distPath : '未构建（开发模式走 Vite 代理）'}`);
