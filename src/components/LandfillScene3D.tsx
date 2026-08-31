@@ -639,6 +639,38 @@ export default function LandfillScene3D({
       if (cast) m.castShadow = true; if (receive) m.receiveShadow = true;
       return m;
     };
+    // 截锥台几何：顶面为平台（马道），四周按 1:3 放坡 —— 填埋堆体梯级台阶的基本单元（建模重构 v4.7）
+    function tpGeometry(bx: number, bz: number, tx: number, tz: number, h: number): THREE.BufferGeometry {
+      const pos: number[] = [], idx: number[] = [], uv: number[] = [];
+      const B: [number, number][] = [[-bx, -bz], [bx, -bz], [bx, bz], [-bx, bz]];
+      const T: [number, number][] = [[-tx, -tz], [tx, -tz], [tx, tz], [-tx, tz]];
+      const quad = (pts: [number, number, number][], uvs: [number, number][], flip: boolean) => {
+        const base = pos.length / 3;
+        for (const [x, y, z] of pts) pos.push(x, y, z);
+        for (const [u, v] of uvs) uv.push(u, v);
+        const a = base, b2 = base + 1, c = base + 2, d = base + 3;
+        if (flip) idx.push(a, b2, c, a, c, d); else idx.push(a, c, b2, b2, c, d);
+      };
+      // 顶面（马道平台）
+      quad(T.map(([x, z]) => [x, h, z] as [number, number, number]), [[0, 0], [1, 0], [1, 1], [0, 1]], false);
+      // 底面（朝下）
+      quad(B.map(([x, z]) => [x, 0, z] as [number, number, number]), [[0, 0], [1, 0], [1, 1], [0, 1]], true);
+      // 四周放坡面
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        const u0 = i / 4, u1 = (i + 1) / 4;
+        quad(
+          [[B[i][0], 0, B[i][1]], [B[j][0], 0, B[j][1]], [T[j][0], h, T[j][1]], [T[i][0], h, T[i][1]]],
+          [[u0, 0], [u1, 0], [u1, 1], [u0, 1]],
+          false,
+        );
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx); g.computeVertexNormals();
+      return g;
+    }
     const cyl = (a: [number, number, number], b: [number, number, number], r: number, mat: THREE.Material) => {
       const pa = new THREE.Vector3(...a), pb = new THREE.Vector3(...b);
       const dir = pb.clone().sub(pa); const len = dir.length();
@@ -802,17 +834,29 @@ export default function LandfillScene3D({
     {
       const baseY = WASTE_BASE_Y, n = liftN(), cap = capY();
       const tints = [0x9a8f7f, 0x948a7a, 0x8f8474, 0x897f6f, 0x84796a, 0x7e7465, 0x786e5f, 0x73695a, 0x6d6455, 0x675e50, 0x62594b, 0x5c5447];
+      // 建模重构（v4.7）：梯级斜坡堆体 —— 每层为截锥台（顶面平台 + 1:3 放坡），
+      // 相邻层顶面形成作业平台（马道），整体呈真实填埋场放坡台阶形态（替代原垂直台阶盒体）。
       for (let i = 0; i < n; i++) {
         const y0 = baseY + 0.55 * i, y1 = y0 + 0.55;
-        const hx = Math.max(2, hxAt(y1)), hz = Math.max(2, hzAt(y1));
-        wasteGroup.add(mesh2(new THREE.BoxGeometry(hx * 2, 0.55, hz * 2), std(tints[i % 12], { map: wasteTex, roughness: 0.98 }), 0, (y0 + y1) / 2, 0, 0, true, true));
+        const bx = Math.max(1.2, hxAt(y0)), bz = Math.max(1.2, hzAt(y0));
+        const tx = Math.max(1.2, hxAt(y1)), tz = Math.max(1.2, hzAt(y1));
+        const m = new THREE.Mesh(tpGeometry(bx, bz, tx, tz, 0.55), std(tints[i % 12], { map: wasteTex, roughness: 0.98, side: THREE.DoubleSide }));
+        m.position.set(0, y0, 0); m.castShadow = true; m.receiveShadow = true;
+        wasteGroup.add(m);
+        // 层间土壤覆盖（马道平台边缘，形成浅色水平分带）
         if (i < n - 1) {
-          const nx = Math.max(2, hxAt(y1 + 0.55)), nz = Math.max(2, hzAt(y1 + 0.55));
-          coverGroup.add(mesh2(new THREE.BoxGeometry(nx * 2 + 0.12, 0.06, nz * 2 + 0.12), std(0xffffff, { map: soilTex, roughness: 1 }), 0, y1 + 0.03, 0, 0, false, true));
+          coverGroup.add(mesh2(new THREE.BoxGeometry(tx * 2 + 0.25, 0.07, tz * 2 + 0.25), std(0xcbb99a, { map: soilTex, roughness: 1 }), 0, y1 + 0.035, 0, 0, false, true));
         }
       }
+      // 终场覆盖（封场顶面：土壤层 + 植被层）
       coverGroup.add(mesh2(new THREE.BoxGeometry(hxAt(cap) * 2 + 0.9, 0.15, hzAt(cap) * 2 + 0.9), std(0xd5c6a8, { map: soilTex, roughness: 1 }), 0, cap + 0.075, 0, 0, false, true));
       coverGroup.add(mesh2(new THREE.BoxGeometry(hxAt(cap) * 2 + 0.6, 0.12, hzAt(cap) * 2 + 0.6), std(0xb9d3a0, { map: grassTex, roughness: 1 }), 0, cap + 0.2, 0, 0, false, true));
+      // 作业面：顶面一侧保留裸露垃圾单元（正在作业的作业面，未覆土）
+      {
+        const topTx = Math.max(8, hxAt(cap) - 4), topTz = Math.max(8, hzAt(cap) - 4);
+        const active = mesh2(new THREE.BoxGeometry(topTx * 0.7, 0.16, topTz * 0.45), std(0x4a4237, { map: wasteTex, roughness: 1 }), -topTx * 0.3, cap + 0.37, -topTz * 0.2, 0, false, true);
+        wasteGroup.add(active);
+      }
     }
     regLayer('waste', wasteGroup); regPick(wasteGroup, 'waste');
     regLayer('cover', coverGroup); regPick(coverGroup, 'cover');
@@ -947,6 +991,12 @@ export default function LandfillScene3D({
         const t = dumpTruck(color);
         t.position.set(x * k, 0.12, z * k); t.rotation.y = ry; vehGroup.add(t);
       });
+      // 作业面自卸车：停在堆体顶部裸露垃圾单元一侧（体现正在作业）
+      {
+        const topX = Math.max(6, (hxAt(capY()) - 12) * 0.5), topZ = Math.max(6, (hzAt(capY()) - 8) * 0.4);
+        const at = dumpTruck(0xc96a1e);
+        at.position.set(-topX, capY() + 0.62, -topZ); at.rotation.y = 0.5; vehGroup.add(at);
+      }
       const comp = new THREE.Group();
       comp.add(mesh2(new THREE.CylinderGeometry(0.5, 0.5, 1.75, 14), std(0x3a4048, { roughness: 0.5 }), 1.35, 0.5, 0));
       comp.children[0].rotation.z = Math.PI / 2;
