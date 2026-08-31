@@ -60,6 +60,7 @@ function roadDist(x: number, z: number) {
 function kv() { return CUR.valleyWidth; }
 function kh() { return CUR.pileHeight; }
 function kp() { return CUR.pondVolume; }
+function ks() { return Math.cbrt(CUR.volumeScale); } // 库容立方根：线性尺寸随体积^(1/3)，使堆体体积严格随库容比例缩放
 function kw() { return CUR.gasWellSpacing; }
 
 function fhw(x: number) { return (x >= -120 ? 110 : Math.max(20, 110 + (x + 120) * 0.75)) * kv(); }
@@ -70,7 +71,7 @@ function terrainH(x: number, z: number) {
   if (z < -92) { const d = roadDist(x, z); const n = Math.min(1, d / 9); h *= 0.18 + 0.82 * n; }
   const noise = (1.6 * Math.sin(x * 0.05) * Math.sin(z * 0.07) + 0.8 * Math.sin(x * 0.021 + 1.7) * Math.sin(z * 0.033 + 0.6)) * (t > 0 ? 1 : 0);
   h = Math.max(-0.02, h + noise);
-  if (Math.abs(x) < 85.2 * kv() && Math.abs(z) < 66 * kv()) h = -9;
+  if (Math.abs(x) < 85.2 * kv() * ks() && Math.abs(z) < 66 * kv() * ks()) h = -9;
   return h;
 }
 
@@ -80,10 +81,10 @@ function setGeo(geo: Partial<GeoParams> | undefined) {
 
 // 分层堆体参数
 const WASTE_BASE_Y = -3.7;
-function liftN() { return Math.max(3, Math.round(12 * kh())); }
+function liftN() { return Math.max(3, Math.round(12 * kh() * ks())); }
 function capY() { return WASTE_BASE_Y + 0.55 * liftN(); }
-function hxAt(y: number) { const b = 85.2 * kv(); return y <= 0 ? b + 0.6 * (y + 4) : (b + 2.4) - 3 * y; }
-function hzAt(y: number) { const b = 66 * kv(); return y <= 0 ? b + 0.6 * (y + 4) : (b + 2.4) - 3 * y; }
+function hxAt(y: number) { const b = 85.2 * kv(); return (y <= 0 ? b + 0.6 * (y + 4) : (b + 2.4) - 3 * y) * ks(); }
+function hzAt(y: number) { const b = 66 * kv(); return (y <= 0 ? b + 0.6 * (y + 4) : (b + 2.4) - 3 * y) * ks(); }
 
 
 
@@ -1473,7 +1474,10 @@ export default function LandfillScene3D({
       }
       regLayer('sensors', sensorLayerGroup);
       // 开发期可观测钩子：自动化测试读取监测点数量
-      if (import.meta.env.DEV) (window as any).__lmSensorMarkers = sensorMarkers.length;
+      if (import.meta.env.DEV) {
+        (window as any).__lmSensorMarkers = sensorMarkers.length;
+        (window as any).__lmPile = { hx: hxAt(0), hz: hzAt(0), cap: capY(), liftN: liftN(), volumeScale: CUR.volumeScale, valleyWidth: CUR.valleyWidth, pileHeight: CUR.pileHeight };
+      }
     }
 
     // ---------------- 主循环 ----------------
