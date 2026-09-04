@@ -19,7 +19,7 @@
    cd "E:\Son of  the SEA\260811\landfillmind"
    git remote set-url origin https://github.com/zjzjzjj/landfillmind.git
    git add -A
-   git commit -m "v4.2 参赛版：双通道 LLM + 多智能体参数化 + Render 部署"
+   git commit -m "v4.2 交付版：双通道 LLM + 多智能体参数化 + Render 部署"
    git push -u origin main
    ```
 4. 推送后到仓库页面核对：
@@ -62,7 +62,7 @@
 
 ## 5. 安全与成本控制
 - OpenRouter 后台设置消费上限（建议 5-10 美元/月），防止公网 Key 被刷
-- 比赛结束后：删除 Render 服务 + 轮换两个 Key（Key 曾出现在聊天记录中）
+- 演示/交付结束后：删除 Render 服务 + 轮换两个 Key（Key 曾出现在聊天记录中）
 - 免费层无持久磁盘：重启/重新部署后历史会话清空，属预期行为
 
 ## 6. 常见问题

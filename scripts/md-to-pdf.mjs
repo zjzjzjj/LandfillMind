@@ -227,7 +227,7 @@ function htmlTemplate(title, body) {
   @page {
     size: A4;
     margin: 2cm 2cm 2.4cm 2cm;
-    @top-left   { content: "海之子杯AI智能体挑战计划"; font-family: "PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans CJK SC",sans-serif; font-size: 9pt; color: #475569; }
+    @top-left   { content: "LandfillMind"; font-family: "PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans CJK SC",sans-serif; font-size: 9pt; color: #475569; }
     @top-right  { content: "v4.2 评审版"; font-family: "PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans CJK SC",sans-serif; font-size: 9pt; color: #475569; }
     @bottom-center { content: counter(page) " / " counter(pages); font-family: "PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans CJK SC",sans-serif; font-size: 9pt; color: #475569; }
   }

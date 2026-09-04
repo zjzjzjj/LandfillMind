@@ -556,12 +556,12 @@ export default function HomePage() {
         </motion.div>
       </section>
 
-      {/* ===== 为工友谋幸福 · 工友安全 ===== */}
+      {/* ===== 工友安全 ===== */}
       <section className="max-w-6xl mx-auto px-6 pb-10">
         <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-surface)' }}>
           <div className="flex items-center gap-2 mb-1">
             <HardHat size={16} style={{ color: '#f59e0b' }} />
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>为工友谋幸福 · 工友安全</h2>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>工友安全</h2>
           </div>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
             污染场地修复的每一道工序背后都是一线工友。把规范条文翻译成工友听得懂的安全须知，把应急能力落到班组。
@@ -757,7 +757,7 @@ export default function HomePage() {
       {/* ===== 页脚 ===== */}
       <footer className="border-t text-center py-5" style={{ borderColor: 'var(--border)' }}>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          LandfillMind · 填埋场全周期智能体 v4.4 · 基于 CodeBuddy Agent SDK · 第一届"海之子"杯 AI 智能体挑战计划参赛作品
+          LandfillMind · 填埋场全周期智能体 v4.4
         </p>
       </footer>
     </div>

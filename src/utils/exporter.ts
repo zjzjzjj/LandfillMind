@@ -110,7 +110,7 @@ ${markdownToHtml(md)}
 }
 
 /**
- * 现场应急决策包导出（海之子杯差异化创新功能·想法 5）
+ * 现场应急决策包导出（差异化创新功能）
  * 把"诊断报告摘要 + 班前交底卡 + 风险矩阵 + 疏散路线 + 现场 QR 海报"
  * 合并为一张可直接打印 / 微信群发 / 张贴的 A4 海报。
  * 海报完整 HTML 由 emergencyPoster.generateEmergencyPosterHtml 生成，

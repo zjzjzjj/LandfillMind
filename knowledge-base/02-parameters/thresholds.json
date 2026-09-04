@@ -4,7 +4,7 @@
     "title_en": "Landfill Engineering Monitoring Threshold Manual",
     "version": "1.0",
     "created": "2026-08-22",
-    "purpose": "海之子杯 SEA-Agent 知识库——运行期/封场期监测预警阈值速查表",
+    "purpose": "SEA-Agent 知识库——运行期/封场期监测预警阈值速查表",
     "applicable_to": ["MSW生活垃圾填埋场", "危险废物填埋场(部分类比)"],
     "main_standards": [
       "CJJ 176-2012 生活垃圾卫生填埋处理技术规范",

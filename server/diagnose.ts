@@ -475,7 +475,7 @@ export async function callDeepSeekAdvice(
 ): Promise<DetailedReport> {
   const overallRisk = maxSeverity(hazards);
 
-  const sys = `你是环境岩土工程专家，服务于"LandfillMind · 填埋场全周期智能体"（第一届"海之子"杯 AI 智能体挑战计划，主题"为人民建好房，为工友谋幸福"）。
+  const sys = `你是环境岩土工程专家，服务于"LandfillMind · 填埋场全周期智能体"。
 
 ## 专业知识背景
 - 注气驱水技术：往填埋场注入气体（空气）把孔隙水"顶"出来，目标含水率降至≤30%
@@ -655,7 +655,7 @@ export async function callDeepSeekAdvice(
 // ============ AI 纠偏 · 计算内核交叉复核 ============
 // 目的：LLM 详实报告生成后，用确定性计算内核的关键数值与风险项做交叉校验；
 // 报告未引用内核数值 / 遗漏风险项时，系统按内核结论兜底纠偏并写入报告，
-// 保证"AI 只解释不推翻内核"的工程可靠性（对应赛事评审"AI 纠偏管理"维度）。
+// 保证"AI 只解释不推翻内核"的工程可靠性。
 
 export interface VerificationResult {
   consistent: boolean;   // 是否全部通过复核
