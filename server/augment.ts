@@ -1,4 +1,4 @@
-import { hybridSearch } from './retrieval.js';
+import { hybridSearchScored } from './retrieval.js';
 import * as calc from './calculate.js';
 import { llmComplete } from './llm.js';
 import { EXPERT_GLOSSARY_HINT } from './prompts.js';
@@ -117,7 +117,11 @@ export async function buildChatAugmentation(query: string): Promise<Augmentation
   const hit = key ? augCache.get(key) : undefined;
   if (hit && hit.exp > Date.now()) return hit.v;
 
-  const kbEntries = await hybridSearch(query, 3);
+  // 相关性门槛：混合得分低于阈值的条目不注入、不出现在引用里
+  //   （实测分布：闲聊/天气 0.5~2.9，工程问题 4.6~18.6，阈值 3.5 居中；.env KB_MIN_SCORE 可调）
+  const KB_MIN_SCORE = parseFloat(process.env.KB_MIN_SCORE ?? '3.5');
+  const scored = await hybridSearchScored(query, 3);
+  const kbEntries = scored.filter(s => s.score >= KB_MIN_SCORE).map(s => s.entry);
   const kb: KBSource[] = kbEntries.map(e => ({ title: e.q, ref: e.cite, clause: e.clause, detail: e.pro }));
   const intent = detectCalcIntent(query);
   const calcs: CalcSource[] = [];

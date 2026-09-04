@@ -18,15 +18,23 @@ export async function initRetrieval(): Promise<void> {
   const baseUrl = (process.env.OPENAI_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4').replace(/\/$/, '');
   try {
     const inputs = KB_ENTRIES.map(e => (e.q + ' ' + e.kw.join(' ') + ' ' + e.clause).slice(0, 400));
-    const resp = await fetch(baseUrl + '/embeddings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: 'embedding-2', input: inputs }),
-    });
-    if (!resp.ok) throw new Error('embedding status ' + resp.status);
-    const j: any = await resp.json();
-    const data: any[] = Array.isArray(j?.data) ? j.data : [];
-    vectors = KB_ENTRIES.map((entry, i) => ({ entry, vec: data[i]?.embedding || [] })).filter(v => v.vec.length > 0);
+    // 智谱 embeddings 单次 input 数组上限 64 条 → 分批请求（199 条 = 4 批）
+    const BATCH = 64;
+    const vecs: number[][] = [];
+    for (let i = 0; i < inputs.length; i += BATCH) {
+      const resp = await fetch(baseUrl + '/embeddings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: 'embedding-2', input: inputs.slice(i, i + BATCH) }),
+      });
+      if (!resp.ok) throw new Error('embedding status ' + resp.status);
+      const j: any = await resp.json();
+      const data: any[] = Array.isArray(j?.data) ? j.data : [];
+      if (data.length !== Math.min(BATCH, inputs.length - i)) throw new Error('embedding batch size mismatch');
+      data.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));   // 按 index 对齐输入顺序
+      for (const d of data) vecs.push(d.embedding || []);
+    }
+    vectors = KB_ENTRIES.map((entry, i) => ({ entry, vec: vecs[i] || [] })).filter(v => v.vec.length > 0);
     if (!vectors.length) vectors = null;
   } catch {
     vectors = null;
@@ -51,8 +59,8 @@ async function embed(text: string): Promise<number[] | null> {
   }
 }
 
-/** 混合检索：0.6 余弦 + 0.4 关键词；embedding 不可用时回退关键词 */
-export async function hybridSearch(query: string, topK = 3): Promise<KBEntry[]> {
+/** 混合检索（带相关性得分）：0.6 余弦 + 0.4 关键词；embedding 不可用时回退关键词 */
+export async function hybridSearchScored(query: string, topK = 3): Promise<{ entry: KBEntry; score: number }[]> {
   const kw = scoreKB(query);
   const kwMap = new Map(kw.map(x => [x.entry.key, x.score]));
   const vec = vectors ? await embed(query) : null;
@@ -68,8 +76,12 @@ export async function hybridSearch(query: string, topK = 3): Promise<KBEntry[]> 
   return scored
     .filter(s => s.score > 0.01)
     .sort((a, b) => b.score - a.score)
-    .slice(0, topK)
-    .map(s => s.entry);
+    .slice(0, topK);
 }
 
-export default { initRetrieval, hybridSearch };
+/** 混合检索：只返回条目（兼容旧调用） */
+export async function hybridSearch(query: string, topK = 3): Promise<KBEntry[]> {
+  return (await hybridSearchScored(query, topK)).map(s => s.entry);
+}
+
+export default { initRetrieval, hybridSearch, hybridSearchScored };

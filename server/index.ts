@@ -56,6 +56,21 @@ const RATE_PER_MIN = parseInt(process.env.RATE_LIMIT_PER_MIN ?? '20', 10);
 const RATE_PER_DAY = parseInt(process.env.RATE_LIMIT_PER_DAY ?? '200', 10);
 const RATE_GLOBAL_PER_DAY = parseInt(process.env.RATE_LIMIT_GLOBAL_PER_DAY ?? '1000', 10);
 
+// ============ 联网搜索（智谱 web_search 工具，专家问答专用） ============
+//   合法引擎枚举：search_std(免费) | search_pro | search_pro_sogou | search_pro_quark | off
+//   .env 可写简写：std/pro/sogou/quark（自动归一化为完整枚举，非法值回退 search_std）
+const WEB_SEARCH_ENGINE = (() => {
+  const raw = (process.env.LLM_WEB_SEARCH ?? 'search_std').toLowerCase().trim();
+  if (raw === 'off') return 'off';
+  const alias: Record<string, string> = {
+    std: 'search_std', search_std: 'search_std',
+    pro: 'search_pro', search_pro: 'search_pro',
+    sogou: 'search_pro_sogou', search_pro_sogou: 'search_pro_sogou',
+    quark: 'search_pro_quark', search_pro_quark: 'search_pro_quark',
+  };
+  return alias[raw] ?? 'search_std';
+})();
+
 const ipMinute = new Map<string, { count: number; resetAt: number }>();
 const ipDay = new Map<string, { count: number; day: string }>();
 let globalCount = 0;
@@ -154,9 +169,12 @@ function friendlyModelName(id: string): string {
     'deepseek/deepseek-chat': 'DeepSeek Chat（OpenRouter）',
     'deepseek/deepseek-chat-v3-0324:free': 'DeepSeek V3（OpenRouter 免费）',
     'nvidia/nemotron-3-ultra-550b-a55b:free': 'Nemotron 3 Ultra 550B（OpenRouter 免费）',
-    'glm-4-flash-250414': 'GLM-4-Flash（智谱直连）',
-    'glm-4.6v-flash': 'GLM-4.6V-Flash（智谱直连）',
+    'glm-4-flash-250414': 'GLM-4-Flash（智谱直连·免费）',
     'glm-4.7-flash': 'GLM-4.7-Flash（智谱直连）',
+    'glm-4.7': 'GLM-4.7（智谱直连）',
+    'glm-4.5-air': 'GLM-4.5-Air（智谱直连）',
+    'glm-4.6v': 'GLM-4.6V（智谱直连·视觉）',
+    'glm-4.6v-flash': 'GLM-4.6V-Flash（智谱直连）',
   };
   if (map[id]) return map[id];
   if (id.startsWith('deepseek/')) return 'DeepSeek ' + id.slice('deepseek/'.length) + '（OpenRouter）';
@@ -260,24 +278,49 @@ async function handleCompatChat(req: express.Request, res: express.Response, pri
     // 免费模型常见限制是并发=1 / 高峰期拥堵（429 / 5xx），做指数退避重试（最多 3 次）
     let upstream: globalThis.Response | null = null;
     let lastCfg: CompatCfg | null = null;
+    // 联网授权：智谱通道启用 web_search 时，显式告知模型可主动联网（否则 persona+KB 约束会压制搜索行为）
+    if (WEB_SEARCH_ENGINE !== 'off' && selectedCfg?.kind === 'glm') {
+      conversation.push({
+        role: 'system',
+        content:
+          '【联网能力】你已接入 web_search 联网搜索工具，具备实时联网检索能力。' +
+          '当用户询问实时信息（天气/新闻/日期时间）、最新动态，或知识库未覆盖的时效性内容（如标准规范的最新版本年号、最新政策）时，' +
+          '必须先调用联网搜索获取最新信息后再作答，并注明信息来源与检索时间。' +
+          '禁止以"无法提供实时信息""请查看天气预报"等理由拒绝——你有能力检索，就直接检索作答。' +
+          '知识库内容与联网检索结果冲突时，以检索到的权威最新版本为准。',
+      });
+    }
     for (const item of chain) {
       lastCfg = item.cfg;
       let maxTokens = detailMaxTokens(detail, item.cfg.kind);
+      let useWebSearch = true; // 400 兜底：上游不支持 tools 时降级重试
       for (let attempt = 0; attempt < 3; attempt++) {
         const body: Record<string, unknown> = {
           model: item.model, messages: conversation, stream: true, temperature: 0.7,
           max_tokens: maxTokens,
         };
-        if (item.cfg.kind === 'glm') body.thinking = { type: 'disabled' };
+        if (item.cfg.kind === 'glm') {
+          body.thinking = { type: 'disabled' };
+          // 联网搜索：智谱通道原生 web_search 工具（search_std 免费档，服务端自动检索并引用）
+          //   .env 可控：LLM_WEB_SEARCH=std|pro|pro_sogou|pro_quark|off（默认 std）
+          if (useWebSearch && WEB_SEARCH_ENGINE !== 'off') {
+            body.tools = [{
+              type: 'web_search',
+              web_search: { enable: true, search_engine: WEB_SEARCH_ENGINE, search_result: true },
+            }];
+          }
+        }
         upstream = await fetch(`${item.cfg.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${item.cfg.apiKey}` },
           body: JSON.stringify(body),
         });
-        // max_tokens 超限 / 上下文过长：减半重试，最终自动降档不中断
+                // max_tokens 超限 / 上下文过长：减半重试，最终自动降档不中断
         if (!upstream.ok && upstream.status === 400) {
           const errText = await upstream.clone().text().catch(() => '');
           console.error(`[llm] ${item.cfg.model} 上游 400：`, errText.slice(0, 300));
+          // tools/web_search 不被该模型支持：去掉工具降级重试一次
+          if (useWebSearch && /web_search|tools|tool/i.test(errText)) { useWebSearch = false; continue; }
           if (/max_tokens|maximum context|context length|invalid_request_error/i.test(errText)) {
             if (maxTokens > 512) { maxTokens = Math.floor(maxTokens / 2); continue; }
           }
