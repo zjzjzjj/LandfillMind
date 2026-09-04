@@ -133,8 +133,8 @@ export function capacity(
   const V_total = A * 10000 * H;
   // 分期：每期库容 = 总库容 / 期数
   const V_perPhase = V_total / Math.max(1, phases);
-  // 覆土占比：日覆土 m³ = Qd × coverRatio，容积扣减
-  const V_cover = Qd * 365 * 0.5 * coverRatio * Math.max(1, phases);
+  // 覆土占比：日覆土 m³ = Qd × coverRatio，容积扣减（总覆土量与分期无关，v4.5.1 修：去掉 ×phases）
+  const V_cover = Qd * 365 * 0.5 * coverRatio;
   // 沉降后剩余库容
   const V_eff = (V_total - V_cover) * sFactor;
   const W_total = V_total * rho;
@@ -628,37 +628,35 @@ export function advect(
 /** C-13. 土壤筛选值（v4.5 加深度分层 + HJ 25.2 触发） */
 export function soilScreen(
   pol: string, cls: '一类(居住/学校)' | '二类(工业/商业)',
-  depthLayer: '0-0.5' | '0.5-1.5' | '1.5+' = '0.5-1.5',
+  depthLayer?: string, // 保留兼容参数；GB 36600-2018 表 1 不分深度，仅作备注
 ): CalcResult {
-  // GB 36600-2018 表 1（按 0-0.5 / 0.5-1.5 / 1.5+ m 分层）
-  const T: Record<string, Record<string, [number, number, number, number, number, number]>> = {
-    '砷': { '一类(居住/学校)': [20, 40, 60, 120, 140, 200], '二类(工业/商业)': [60, 70, 80, 140, 180, 240] },
-    '镉': { '一类(居住/学校)': [20, 35, 50, 47, 80, 100], '二类(工业/商业)': [65, 75, 90, 172, 230, 290] },
-    '铅': { '一类(居住/学校)': [400, 500, 600, 800, 1000, 1400], '二类(工业/商业)': [800, 900, 1000, 2500, 3000, 3800] },
-    '汞': { '一类(居住/学校)': [8, 20, 30, 33, 60, 100], '二类(工业/商业)': [38, 50, 60, 82, 150, 240] },
-    '镍': { '一类(居住/学校)': [150, 350, 500, 600, 1100, 1500], '二类(工业/商业)': [900, 1000, 1200, 2000, 2400, 3000] },
-    '苯': { '一类(居住/学校)': [1.0, 2.5, 4.0, 10, 20, 40], '二类(工业/商业)': [4.0, 5.0, 6.0, 40, 60, 80] },
-    '铬(六价)': { '一类(居住/学校)': [3.0, 5.0, 6.5, 30, 50, 80], '二类(工业/商业)': [5.7, 7.0, 8.5, 78, 120, 180] },
+  // GB 36600-2018 表 1（建设用地土壤污染风险筛选值/管制值，mg/kg）
+  // 注：v4.5.1 修正——原表为三档深度自定义值，与 GB 36600 表 1（不分深度）不符，改为国标单值
+  const T: Record<string, Record<string, [number, number]>> = {
+    '砷': { '一类(居住/学校)': [20, 120], '二类(工业/商业)': [60, 140] },
+    '镉': { '一类(居住/学校)': [20, 47], '二类(工业/商业)': [65, 172] },
+    '铬(六价)': { '一类(居住/学校)': [3.0, 30], '二类(工业/商业)': [5.7, 78] },
+    '铅': { '一类(居住/学校)': [400, 800], '二类(工业/商业)': [800, 2500] },
+    '汞': { '一类(居住/学校)': [8, 33], '二类(工业/商业)': [38, 82] },
+    '镍': { '一类(居住/学校)': [150, 600], '二类(工业/商业)': [900, 2000] },
+    '苯': { '一类(居住/学校)': [1, 10], '二类(工业/商业)': [4, 40] },
   };
   const row = T[pol];
   if (!row) return { ok: false, value: '未知污染物', grade: 'red', analysis: `未收录 ${pol} 的 GB 36600 限值`, ref: 'GB 36600-2018 表1' };
-  const idx = depthLayer === '0-0.5' ? 0 : depthLayer === '0.5-1.5' ? 1 : 2;
-  const idxCtrl = depthLayer === '0-0.5' ? 3 : depthLayer === '0.5-1.5' ? 4 : 5;
-  const sv = row[cls][idx];
-  const gv = row[cls][idxCtrl];
-  // HJ 25.2 触发：检出 > 筛选值 → 须做风险评估
+  const [sv, gv] = row[cls];
+  const depthNote = depthLayer ? `（GB 36600 表 1 不分深度，深度层 ${depthLayer} 已忽略）` : '';
   const triggerHJ25_2 = '检出 > 筛选值 → 须风险评估(HJ 25.2)';
   return {
     ok: true,
     value: `筛选值 ${sv} mg/kg · 管制值 ${gv} mg/kg`,
     unit: 'mg/kg',
     grade: 'green',
-    analysis: `${pol} (${cls}, ${depthLayer}m)：筛选值 = ${sv} mg/kg, 管制值 = ${gv} mg/kg。判定：检出 < 筛选值 → 一般可接受; 筛选值 < 检出 < 管制值 → ${triggerHJ25_2}; 检出 > 管制值 → 须修复(HJ 25.3)并监测(HJ 25.4)。`,
+    analysis: `${pol} (${cls})：筛选值 = ${sv} mg/kg, 管制值 = ${gv} mg/kg${depthNote}。判定：检出 < 筛选值 → 一般可接受; 筛选值 < 检出 < 管制值 → ${triggerHJ25_2}; 检出 > 管制值 → 须修复(HJ 25.3)并监测(HJ 25.4)。`,
     ref: 'GB 36600-2018 表1',
     extra: {
       筛选值: `${sv} mg/kg`,
       管制值: `${gv} mg/kg`,
-      深度层: `${depthLayer} m`,
+      深度分层: depthLayer ?? '国标不分层',
       HJ25_2触发: triggerHJ25_2,
     },
   };
