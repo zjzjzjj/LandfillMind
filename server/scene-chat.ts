@@ -14,8 +14,8 @@
  *  - AI 回复：配置了 API Key 时用 llmComplete 生成自然语言；无 key / 失败自动回退模板
  */
 
-import { clampGeo, GEO_PRESETS, estimateSite, DEFAULT_GEO } from '../src/components/LandfillScene3D/geo.js';
-import type { GeoParams } from '../src/components/LandfillScene3D/geo.js';
+import { clampGeo, GEO_PRESETS, estimateSite, DEFAULT_GEO } from './geo';
+import type { GeoParams } from './geo';
 import { hasSceneIntent, isExplicitSceneRequest, DEFAULT_NL_PARSER, buildScene } from './scene-builder.js';
 import { detectOgsIntent, detectCalcIntent } from './augment.js';
 import { runOgsScenario } from './ogs.js';

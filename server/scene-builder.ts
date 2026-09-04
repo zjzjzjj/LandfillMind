@@ -15,7 +15,7 @@
 import {
   clampGeo, GEO_PRESETS, estimateSite, DEFAULT_GEO,
   type GeoParams,
-} from '../src/components/LandfillScene3D/geo';
+} from './geo';
 
 // ============ 输入 / 输出类型（与 prompts.ts / index.ts 工具声明一致） ============
 
