@@ -63,9 +63,10 @@ export const EXPERT_SYSTEM_PROMPTS: Record<string, string> = {
 // ====================================================================
 import { TRAINING_SCENARIOS } from '../../knowledge-base/07-prompts/scenarios';
 import { EXPANDED_SCENARIOS_BATCH2 } from '../../knowledge-base/07-prompts/scenarios-batch2';
+import { EXPANDED_SCENARIOS_BATCH3 } from '../../knowledge-base/07-prompts/scenarios-batch3';
 
 function formatExamples(agentKey: string): string {
-  const examples = [...TRAINING_SCENARIOS, ...EXPANDED_SCENARIOS_BATCH2].filter(s => s.agentKey === agentKey);
+  const examples = [...TRAINING_SCENARIOS, ...EXPANDED_SCENARIOS_BATCH2, ...EXPANDED_SCENARIOS_BATCH3].filter(s => s.agentKey === agentKey);
   if (examples.length === 0) return '';
   return '\n\n【训练示例 · 真实场景参考】\n' + examples.map((ex, i) =>
     `示例 ${i + 1}（${ex.difficulty} · ${ex.scenario}）：\n` +
@@ -80,7 +81,7 @@ function formatExamples(agentKey: string): string {
 for (const key of Object.keys(EXPERT_SYSTEM_PROMPTS)) {
   EXPERT_SYSTEM_PROMPTS[key] += formatExamples(key);
 }
-console.log('[ExpertPrompts] 训练样本已注入：', TRAINING_SCENARIOS.length + EXPANDED_SCENARIOS_BATCH2.length, '个场景');
+console.log('[ExpertPrompts] 训练样本已注入：', TRAINING_SCENARIOS.length + EXPANDED_SCENARIOS_BATCH2.length + EXPANDED_SCENARIOS_BATCH3.length, '个场景');
 
 /** 专家角色 → 中文展示名（用于 banner 与追问卡片头标） */
 export const EXPERT_LABELS: Record<string, string> = {
