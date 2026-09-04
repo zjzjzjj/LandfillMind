@@ -324,11 +324,11 @@ const ROAM_WAYPOINTS: RoamWaypoint[] = [
 
 // ============ 画质三档（性能自适应）：低端环境自动降档 ============
 const QUALITY_PRESETS: Record<Exclude<SceneQuality, 'auto'>, {
-  pixelRatio: number; antialias: boolean; bloom: boolean; shadows: number; clouds: number;
+  pixelRatio: number; antialias: boolean; bloom: boolean; shadows: number;
 }> = {
-  low:    { pixelRatio: 1,   antialias: false, bloom: false, shadows: 0,    clouds: 4 },
-  medium: { pixelRatio: 1.5, antialias: true,  bloom: true,  shadows: 1024, clouds: 8 },
-  high:   { pixelRatio: 2,   antialias: true,  bloom: true,  shadows: 2048, clouds: 8 },
+  low:    { pixelRatio: 1,   antialias: false, bloom: false, shadows: 0 },
+  medium: { pixelRatio: 1.5, antialias: true,  bloom: true,  shadows: 1024 },
+  high:   { pixelRatio: 2,   antialias: true,  bloom: true,  shadows: 2048 },
 };
 function resolveQuality(q: SceneQuality): Exclude<SceneQuality, 'auto'> {
   if (q !== 'auto') return q;
@@ -510,7 +510,7 @@ export default function LandfillScene3D({
     scene.environment = envMapRef.current;
     const preset = TIME_PRESETS[timeOfDay];
     scene.background = new THREE.Color(preset.bgColor);
-    // 天空穹顶渐变 + 低多边形云（参考 V6 参考模型）
+    // 天空穹顶渐变（低多边形云已移除，观感更简洁）
     {
       const skyMat = new THREE.ShaderMaterial({
         side: THREE.BackSide, depthWrite: false, fog: false,
@@ -524,18 +524,6 @@ export default function LandfillScene3D({
       const sky = new THREE.Mesh(new THREE.SphereGeometry(1900, 24, 16), skyMat);
       sky.renderOrder = -10;
       scene.add(sky);
-    }
-    {
-      const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: timeOfDay === 'night' ? 0.10 : 0.9, fog: false });
-      const spots: [number, number, number][] = [[-430, 215, -370], [120, 265, -480], [490, 245, -170], [-510, 205, 310], [390, 255, 430], [-40, 225, 570], [-185, 235, 60], [270, 205, -330]];
-      for (const [x, y, z] of spots.slice(0, Q.clouds)) {
-        const r = 26 + texRnd() * 16;
-        const cg = new THREE.Group();
-        const m1 = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cloudMat);
-        const m2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.7, 10, 8), cloudMat); m2.position.set(r * 0.9, r * 0.25, r * 0.3);
-        const m3 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 10, 8), cloudMat); m3.position.set(-r * 0.85, r * 0.2, -r * 0.25);
-        cg.add(m1, m2, m3); cg.position.set(x, y, z); scene.add(cg);
-      }
     }
 
     const camera = new THREE.PerspectiveCamera(50, width / heightPx, 0.5, 4000);
