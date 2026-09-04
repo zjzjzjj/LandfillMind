@@ -13,7 +13,7 @@ export const CALC_FORMULAS: Record<string, string> = {
   slopeFs: 'Fs = (c·L + W·cos²α·tanφ) / (W·sinα·cosα)；运行期要求 Fs ≥ 1.30（CJJ 176-2012 §4.5）',
   capacity: 'V = A·H·10⁴；使用年限 T = W / (Qd × 365)（CJJ 176-2012 §3.3）',
   hdpeCheck: 'D ≥ 1.5mm；σ ≥ 27MPa；ε ≥ 700%；焊缝气压 0.2MPa 持压 5min 压降 <10%（GB/T 17643-2011 / GB 16889-2008 §5.1）',
-  wellR: 'R = √(Q·t / (π·nₑ·Δh))（HJ 25.6-2019）',
+  wellR: 'R = 0.6·L·(Q/100)^0.25·(Δh/2)^0.2（GCW 稳态经验式，与 t 无关）',
   injectR: 'r ≈ k·√(P_inj·t / μ)（CJJ 176-2012 §5.2 / 研究经验式）',
   leachateCalc: 'Q = A·P·C·η / 1000（A=面积㎡，P=年降雨mm，C=径流系数，η=覆盖折减）（CJJ 176-2012 §5.1）',
   lfgYield: 'Q(t) = k·L₀·M·exp(−k·t)（USEPA LandGEM 一阶衰减）',
