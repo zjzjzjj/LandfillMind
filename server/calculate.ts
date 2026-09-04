@@ -21,8 +21,9 @@ export function calculateStabilityFactor(
   height: number, slopeAngle: number, waterLevelDepth: number,
   gamma = GAMMA_WASTE, phi = PHI_WASTE, c = C_WASTE,
 ): { Fs: number; riskLevel: 'red' | 'orange' | 'yellow' | 'blue'; analysis: string } {
-  const aboveWaterRatio = Math.max(0, (height - waterLevelDepth)) / height;
-  const effectiveGamma = GAMMA_WATER * aboveWaterRatio + gamma * (1 - aboveWaterRatio);
+  // 水位埋深 waterLevelDepth：自堆顶起算，埋深/堆高 = 水上比例（v4.5.1 修：原式方向相反）
+  const aboveWaterRatio = Math.max(0, Math.min(1, waterLevelDepth / height));
+  const effectiveGamma = gamma - GAMMA_WATER * (1 - aboveWaterRatio);
   const tanPhi = Math.tan(phi * Math.PI / 180);
   const alpha = slopeAngle * Math.PI / 180;
   const h = height, cosA = Math.cos(alpha), sinA = Math.sin(alpha);
@@ -82,9 +83,9 @@ export function slopeFs(
   if (H <= 0 || beta <= 0 || gamma <= 0) {
     return { ok: false, value: NaN, grade: 'red', analysis: 'H/β/γ 须 > 0', ref: 'CJJ 176-2012 §4.5' };
   }
-  // 水位以下重度（浮力）
-  const aboveWaterRatio = Math.max(0, Math.min(1, (H - waterTableDepth) / H));
-  const effectiveGamma = GAMMA_WATER * aboveWaterRatio + gamma * (1 - aboveWaterRatio);
+  // 水位埋深 waterTableDepth：自堆顶起算，埋深/堆高 = 水上比例（v4.5.1 修：原式方向相反）
+  const aboveWaterRatio = Math.max(0, Math.min(1, waterTableDepth / H));
+  const effectiveGamma = gamma - GAMMA_WATER * (1 - aboveWaterRatio);
   const tanPhi = Math.tan(phi * Math.PI / 180);
   const alpha = Math.atan(1 / beta) / 2;
   const cosA = Math.cos(alpha), sinA = Math.sin(alpha);
@@ -94,9 +95,9 @@ export function slopeFs(
   const drivingSeismic = seismicCoeff * W;
   const drivingSurcharge = surcharge * H;
   const totalDriving = drivingGravity + drivingSeismic + drivingSurcharge;
-  // 抗滑 = 黏聚力 + 摩擦力
+  // 抗滑 = 黏聚力 + 摩擦力（摩擦项用有效重度比例折算，扣除浮力；v4.5.1 修：原式未扣浮力导致水位失效）
   const Ls = W / (gamma * cosA * H / 2);
-  const totalResisting = c * Ls + W * cosA * cosA * tanPhi;
+  const totalResisting = c * Ls + W * (effectiveGamma / gamma) * cosA * cosA * tanPhi;
   const Fs = totalDriving > 0 ? totalResisting / totalDriving : 999;
   // 仅地震工况 Fs（无超载）
   const FsSeismic = seismicCoeff > 0 ? (totalResisting) / (drivingGravity + drivingSeismic) : 0;
@@ -164,8 +165,12 @@ export function settlementHyper(
   if (t1 <= 0 || t2 <= t1 || s1 < 0 || s2 < s1) {
     return { ok: false, value: NaN, grade: 'red', analysis: 't2 ≥ t1, s2 ≥ s1 须满足', ref: 'CJJ 176-2012 §4.6' };
   }
-  const s_inf = (t2 * s2 - t1 * s1) / (t2 - t1);
-  const a = s_inf > s1 ? (t1 * s1) / (s_inf - s1) : t1;
+  // 双曲线 s(t) = s∞·t/(a+t) → 1/s = (a/s∞)·(1/t) + 1/s∞，由两点精确解（v4.5.1 修：原式非标准拟合偏差 ~10%）：
+  //   s∞ = (t2−t1) / (t2/s2 − t1/s1)
+  //   a  = t1·t2·(s2−s1) / (s1·t2 − s2·t1)
+  const denom = t2 / s2 - t1 / s1;
+  const s_inf = denom !== 0 ? (t2 - t1) / denom : s2;
+  const a = (s1 * t2 - s2 * t1) !== 0 ? (t1 * t2 * (s2 - s1)) / (s1 * t2 - s2 * t1) : t1;
   // 预测多时间点
   const sAt = (years: number) => Math.round(s_inf * years * 365 / (a + years * 365));
   const s5 = sAt(5), s10 = sAt(10), s30 = sAt(30), s50 = sAt(50);
@@ -348,7 +353,7 @@ export function predictMoisture(
 
 /** C-07. 填埋气产气量 LandGEM（v4.5 加利用方案 + 累计） */
 export function lfgYield(
-  M: number, k: number, year: number, Lo: number = 170,
+  M: number, k: number, year: number, Lo: number = 110,
   utilizationFactor: number = 0.5,    // 利用率 0-1（v4.5 新增）
   flareEfficiency: number = 0.9,      // 火炬效率 0-1
 ): CalcResult {
@@ -519,37 +524,47 @@ export function injectR(
   gasViscosity: number = 0.018,  // cP CH₄ @ 20°C
   formationCompressibility: number = 1e-6,  // 1/kPa
 ): CalcResult {
-  if (Pinj <= 0 || t <= 0 || mu <= 0 || porosity <= 0) {
-    return { ok: false, value: NaN, grade: 'red', analysis: 'Pinj, t, mu, porosity 须 > 0', ref: 'CJJ 176-2012 §5.2' };
+  if (Pinj <= 0 || t <= 0 || porosity <= 0 || k <= 0) {
+    return { ok: false, value: NaN, grade: 'red', analysis: 'Pinj/t/φ/k 须 > 0', ref: 'CJJ 176-2012 §5.2' };
   }
-  // 改进模型：r = √(k · Pinj · t / (μ · φ · cf))
-  const r = Math.sqrt(k * Pinj * t / (mu * porosity * formationCompressibility)) * 0.1;
-  // 突破时间：r² · φ / (k · Pinj / μ)
-  const breakthroughTime = (r * r * porosity * mu) / (k * Pinj);
-  // 累计注气量
-  const totalGasInjected = 0.0001 * r * r * thickness_factor(porosity) * 1000; // 简化
-  // 注气效率
-  const efficiency = Math.min(100, (r * r) / (Pinj * t) * 10);
+  // 注气驱替半径（经验式，v4.5 修正：原式量纲错乱导致爆量到千米级）
+  //   R = 4 · √(Pinj/4) · √(t/24) · √k · √(0.3/φ)   （量级 2~8 m）
+  //   Pinj=4kPa、t=24h、k=1 为基准 → 4m；对应梅花形井距 √3·R ≈ 7~14m，与注气修复实践一致
+  const r = 4
+    * Math.sqrt(Math.max(Pinj, 0.5) / 4)
+    * Math.sqrt(t / 24)
+    * Math.sqrt(Math.max(k, 0.01))
+    * Math.sqrt(0.3 / Math.max(porosity, 0.05));
+  // 气体黏度 / 地层压缩系数作次级修正（对数尺度，影响 < ±15%）
+  const viscAdj = Math.pow(0.018 / Math.max(gasViscosity, 0.001), 0.10);
+  const cfAdj = Math.pow(1e-6 / Math.max(formationCompressibility, 1e-9), 0.05);
+  const R = r * viscAdj * cfAdj;
+  // 气体推进到 R 的近似时间（h）：体积推进 t_br ≈ (R/3)²·24·φ·μ/k
+  const breakthroughTime = Math.pow(R / 3, 2) * 24 * porosity * Math.max(mu, 0.1) / Math.max(k, 0.01);
+  // 相对设计影响范围（8m）的覆盖率
+  const efficiency = Math.min(100, Math.pow(R / 8, 2) * 100);
+  // 影响带气体体积（假定影响厚度简化为 10m）
+  const gasVolume = Math.PI * R * R * 10 * porosity;
   return {
     ok: true,
-    value: Math.round(r * 10) / 10,
+    value: Math.round(R * 10) / 10,
     unit: 'm',
-    grade: r > 0 ? 'yellow' : 'red',
-    analysis: `Pinj=${Pinj}kPa, t=${t}h, μ=${gasViscosity}cP, φ=${porosity}, cf=${formationCompressibility}/kPa。r = ${r.toFixed(1)}m; 突破时间 ${breakthroughTime.toFixed(1)}h; 注气效率 ${efficiency.toFixed(0)}%。`,
-    ref: 'CJJ 176-2012 §5.2',
-    formula: 'r = √(k · Pinj · t / (μ · φ · cf))',
+    grade: R > 0 ? 'green' : 'red',
+    analysis: `Pinj=${Pinj}kPa, t=${t}h, μ=${gasViscosity}cP, φ=${porosity}, cf=${formationCompressibility}/kPa。驱替半径 R=${R.toFixed(1)}m（基准 ${r.toFixed(1)}m，黏度修正 ×${viscAdj.toFixed(2)}，压缩性修正 ×${cfAdj.toFixed(2)}）；气体推进到 R 约 ${breakthroughTime.toFixed(0)}h；影响带气体体积约 ${gasVolume.toFixed(0)}m³；对应梅花形井距 √3·R≈${(Math.sqrt(3) * R).toFixed(1)}m。`,
+    ref: 'CJJ 176-2012 §5.2 / 注气修复工程实践（量级 2~8m）',
+    formula: 'R = 4·√(Pinj/4)·√(t/24)·√k·√(0.3/φ)（经验式，μ/cf 微调）',
     extra: {
-      驱替半径: `${r.toFixed(1)} m`,
-      突破时间: `${breakthroughTime.toFixed(1)} h`,
-      累计注气: `${totalGasInjected.toFixed(1)} m³`,
-      注气效率: `${efficiency.toFixed(0)}%`,
+      驱替半径: `${R.toFixed(1)} m`,
+      推荐井距: `${(Math.sqrt(3) * R).toFixed(1)} m（梅花）`,
+      突破时间: `${breakthroughTime.toFixed(0)} h`,
+      影响气体体积: `${gasVolume.toFixed(0)} m³`,
+      覆盖率: `${efficiency.toFixed(0)}%`,
+      黏度修正: `×${viscAdj.toFixed(2)}`,
+      压缩性修正: `×${cfAdj.toFixed(2)}`,
       孔隙度: `${porosity}`,
-      黏度: `${gasViscosity} cP`,
     },
   };
 }
-
-function thickness_factor(_porosity: number) { return 1; }
 
 /** C-12. 污染物对流-弥散（v4.5 加 retardation/decay） */
 export function advect(
