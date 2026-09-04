@@ -15,8 +15,6 @@ import {
   type GeoParams, type LandfillApi, type SiteEstimate, type SceneQuality,
 } from './LandfillScene3D/geo';
 import type { DiagnosisResult, RiskItem } from '../types';
-import { useSensors, SENSOR_KEYS } from '../hooks/useSensors';
-import type { SensorKey, SensorReading } from '../hooks/useSensors';
 
 // re-export 保持原导入路径兼容
 export { DEFAULT_GEO, GEO_PRESETS, clampGeo, estimateSite };
@@ -45,35 +43,11 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 let CUR: GeoParams = { ...DEFAULT_GEO };
 
-const MOUNTAIN_ROAD: [number, number][] = [[0, -90], [-14, -112], [-38, -130], [-34, -154], [-64, -172], [-58, -198], [-88, -212]];
-function segDist(px: number, pz: number, a: [number, number], b: [number, number]) {
-  const abx = b[0] - a[0], abz = b[1] - a[1];
-  const t = clamp(((px - a[0]) * abx + (pz - a[1]) * abz) / ((abx * abx + abz * abz) || 1), 0, 1);
-  const dx = px - (a[0] + abx * t), dz = pz - (a[1] + abz * t);
-  return Math.hypot(dx, dz);
-}
-function roadDist(x: number, z: number) {
-  let d = 1e9;
-  for (let i = 0; i < MOUNTAIN_ROAD.length - 1; i++) d = Math.min(d, segDist(x, z, MOUNTAIN_ROAD[i], MOUNTAIN_ROAD[i + 1]));
-  return d;
-}
 function kv() { return CUR.valleyWidth; }
 function kh() { return CUR.pileHeight; }
 function kp() { return CUR.pondVolume; }
 function ks() { return Math.cbrt(CUR.volumeScale); } // 库容立方根：线性尺寸随体积^(1/3)，使堆体体积严格随库容比例缩放
 function kw() { return CUR.gasWellSpacing; }
-
-function fhw(x: number) { return (x >= -120 ? 110 : Math.max(20, 110 + (x + 120) * 0.75)) * kv(); }
-function terrainH(x: number, z: number) {
-  const fw = fhw(x);
-  const t = Math.max(0, (Math.abs(z) - fw) / 70);
-  let h = 45 * Math.pow(Math.min(t, 1.3), 1.7);
-  if (z < -92) { const d = roadDist(x, z); const n = Math.min(1, d / 9); h *= 0.18 + 0.82 * n; }
-  const noise = (1.6 * Math.sin(x * 0.05) * Math.sin(z * 0.07) + 0.8 * Math.sin(x * 0.021 + 1.7) * Math.sin(z * 0.033 + 0.6)) * (t > 0 ? 1 : 0);
-  h = Math.max(-0.02, h + noise);
-  if (Math.abs(x) < 85.2 * kv() * ks() && Math.abs(z) < 66 * kv() * ks()) h = -9;
-  return h;
-}
 
 function setGeo(geo: Partial<GeoParams> | undefined) {
   CUR = clampGeo({ ...DEFAULT_GEO, ...(geo ?? {}) });
@@ -93,16 +67,11 @@ let INFO: Record<string, { n: string; d: string }> = {};
 
 function buildInfo(): Record<string, { n: string; d: string }> {
   return {
-    terrain: { n: '山谷地形', d: 'U 形山谷：中央为谷底平台，两侧山体幂函数放坡抬升；西侧上游收口，南侧沿盘山进场路开凿山口。\n山谷型填埋场利用天然地形形成库容，是山区最常见的填埋场形式。' },
     waste: { n: '填埋库区 · 分层作业区', d: '生活垃圾分层摊铺、压实后逐层堆高：\n· 约 ' + liftN() + ' 个分层作业面\n· 边坡不陡于 1:3，分级设马道\n· 每日作业后日覆盖，中间覆盖黏土\n【点击查看覆盖结构详图】' },
     cover: { n: '终场覆盖 / 作业面', d: '顶部绿色为已封场终场覆盖：排气层 → 防渗层 → 排水层 → 植被恢复层。\n【点击查看覆盖结构详图】' },
     liner: { n: '场底及边坡防渗系统', d: '单层复合衬层结构（自下而上）：基础层 → 压实黏土 ≥750mm → HDPE 土工膜 1.5mm → 膜上保护层 → 渗滤液导排碎石层 → 垃圾体。\n膜端设锚固沟固定，场底坡向渗滤液盲沟。\n【点击查看结构详图】' },
     leach: { n: '渗滤液收集导排系统', d: '场底导排层 + 穿孔 HDPE 盲沟（鱼刺状布置），渗滤液重力导排至集水井，经泵站提升汇入调节池。\n提示：开启「堆体半透明」或「剖切视图」可观察场底管网。' },
     gas: { n: '填埋气导排系统', d: '垃圾降解产生填埋气（约 55% CH₄ + 45% CO₂）。\n导气井按约 ' + Math.round(45 * kw()) + ' m 间距网格布置，经集气管汇至火炬燃烧排放，防止无组织排放与爆炸风险。' },
-    drain: { n: '环场截洪沟', d: '沿库区周边设置，截流场外山坡雨水（清污分流），减少进入堆体的水量。\n南侧大门处设盖板涵洞通过。' },
-    road: { n: '场内道路', d: '进场道路经地磅计量后，沿环场路到达作业平台；南侧盘山进场路翻越山口与外界公路相接。\n路面宽 6~7 m，泥结碎石/混凝土路面。' },
-    build: { n: '生产生活辅助设施', d: '办公管理区、机修车间、门卫室、地磅房（进场计量）、大门与围栏。\n管理区位于常年主导风向上风向。' },
-    veh: { n: '作业车辆', d: '黄色为履带式压实机，橙色为自卸卡车，另配推土机与场内交通车辆。' },
     dam: { n: '垃圾坝', d: '位于填埋区下游的挡渣构筑物，形成库容、稳定堆体，坝顶兼作检修道路。' },
   };
 }
@@ -141,9 +110,9 @@ const SVG_COVER = layerSVG('终场覆盖系统（自上而下：植被层到垃�
 
 // ---------------- 图例 ----------------
 const LEGEND_ITEMS: [string, string][] = [
-  ['#7a9a55', '地形/山体'], ['#9c8f7a', '填埋堆体'], ['#6da854', '终场覆盖'], ['#494744', '作业面'],
-  ['#1f2733', '防渗衬层'], ['#e67e22', '渗滤液管'], ['#c0392b', '填埋气管'], ['#8b939b', '截洪沟'],
-  ['#5f6367', '道路'], ['#a88f66', '垃圾坝'], ['#3a2b18', '渗滤液'], ['#bfc6cc', '导气井'],
+  ['#9c8f7a', '填埋堆体'], ['#6da854', '终场覆盖'], ['#1f2733', '防渗衬层'],
+  ['#e67e22', '渗滤液管'], ['#c0392b', '填埋气管'], ['#a88f66', '垃圾坝'],
+  ['#3a2b18', '渗滤液'], ['#bfc6cc', '导气井'],
 ];
 
 // ---------------- 时辰光照预设 ----------------
@@ -168,16 +137,7 @@ function riskColorHex(level: RiskItem['level']): number {
     : level === 'blue' ? 0x2563eb
     : 0x16a34a;
 }
-const SENSOR_LEVEL_HEX: Record<SensorReading['level'], number> = {
-  green: 0x10b981, yellow: 0xf59e0b, orange: 0xf97316, red: 0xef4444,
-};
-const SENSOR_BASE_POS: Record<SensorKey, [number, number, number]> = {
-  ch4: [-60, 30, -40],
-  h2s: [80, 6, 60],
-  waterLevel: [-20, 0, -80],
-  settlement: [50, 28, 10],
-  temperature: [0, 30, 30],
-};
+// 传感器的等级颜色表与基坐标 —— 已移除
 function riskColorCss(level: RiskItem['level']): string {
   return level === 'red' ? '#dc2626'
     : level === 'orange' ? '#ea580c'
@@ -219,19 +179,13 @@ const DEFAULT_MONITORING: MonitoringSnapshot = {
 
 // ---------------- UI 配置 ----------------
 const LAYER_OPTIONS: { key: string; label: string }[] = [
-  { key: 'terrain', label: '地形山体' },
   { key: 'waste', label: '填埋堆体（库区）' },
   { key: 'cover', label: '终场覆盖 / 作业面' },
   { key: 'liner', label: '防渗衬层（HDPE）' },
   { key: 'leach', label: '渗滤液系统（管网+调节池）' },
   { key: 'gas', label: '填埋气系统（导气井+火炬）' },
-  { key: 'drain', label: '环场截洪沟' },
-  { key: 'roads', label: '道路' },
-  { key: 'build', label: '建构筑物（坝/厂房/监测井）' },
-  { key: 'veh', label: '作业车辆' },
-  { key: 'trees', label: '山体植被' },
+  { key: 'build', label: '垃圾坝' },
   { key: 'labels', label: '文字标注' },
-  { key: 'sensors', label: '实时传感器' },
 ];
 
 const VIEW_OPTIONS: { key: 'bird' | 'dam' | 'top' | 'sec'; label: string }[] = [
@@ -423,11 +377,6 @@ export default function LandfillScene3D({
   const [monitoring, setMonitoring] = useState<MonitoringSnapshot>(DEFAULT_MONITORING);
   const monitoringRef = useRef<MonitoringSnapshot>(DEFAULT_MONITORING);
   useEffect(() => { monitoringRef.current = monitoring; }, [monitoring]);
-  const { sensors: iotSensors } = useSensors();
-  const iotSensorsRef = useRef(iotSensors);
-  useEffect(() => { iotSensorsRef.current = iotSensors; }, [iotSensors]);
-  const [showHotspots, setShowHotspots] = useState(true);
-  const [showLiveLabels, setShowLiveLabels] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
 
   // 诊断数据联动：读取 AI 快诊写入的最新结果（DiagnosisPage 保存于 sessionStorage 'diagnosis-latest'）。
@@ -472,6 +421,10 @@ export default function LandfillScene3D({
     return () => clearInterval(id);
   }, [monitoring.source]);
 
+  // PMREM 环境贴图缓存引用 —— 仅首次 renderer 就绪时生成，effect 重跑不重生成
+  const envMapRef = useRef<THREE.Texture | null>(null);
+  useEffect(() => () => { envMapRef.current?.dispose(); envMapRef.current = null; }, []);
+
   // 几何参数优先级：geoParams prop > liveGeo（preset/slider 状态）。
   // 修复：不再把 diagnosis.site（工程量纲：m/°）合入 GeoParams（无量纲缩放 0.5~1.8），
   // 原先 clampGeo 会把 landfillHeight:25 钳到 1.8，导致模型尺寸畸变。
@@ -513,7 +466,13 @@ export default function LandfillScene3D({
     let heightPx = mount.clientHeight || height;
 
     // LS1 性能优化：贴图懒构建（避免模块加载时阻塞 150-300ms）
+    // 纹理生命周期管理：所有 CanvasTexture 集中注册，组件卸载/重建时统一 dispose
+    //   material.dispose() 不会释放贴图，这里手动回收以避免 HMR + 反复重建导致 GPU 泄漏
+    const allTextures: THREE.Texture[] = [];
+    function trackTex<T extends THREE.Texture>(t: T): T { allTextures.push(t); return t; }
+
     const { grass: grassTex, soil: soilTex, wasteTex, liner: linerTex, asphalt: asphaltTex, gravel: gravelTex } = buildTextures();
+    [grassTex, soilTex, wasteTex, linerTex, asphaltTex, gravelTex].forEach(t => t && allTextures.push(t));
 
     // ---------------- 渲染器 / 场景 / 相机 / 灯光 ----------------
     const Q = QUALITY_PRESETS[resolveQuality(quality)];
@@ -542,11 +501,13 @@ export default function LandfillScene3D({
 
     // IBL：PMREMGenerator + RoomEnvironment 程序生成环境光贴图，所有 PBR 材质（堆体/设备/地形）
     //   立刻反射真实环境光，无需下载 HDRI 文件——0 网络依赖，0 卡顿，瞬间提升金属/玻璃质感
-    {
+    //   缓存：仅在 renderer 首次到位时生成一次（debouncedGeoKey/timeOfDay/diagnosis 变化不重生成）
+    if (!envMapRef.current) {
       const pmrem = new THREE.PMREMGenerator(renderer);
-      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      envMapRef.current = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       pmrem.dispose();
     }
+    scene.environment = envMapRef.current;
     const preset = TIME_PRESETS[timeOfDay];
     scene.background = new THREE.Color(preset.bgColor);
     // 天空穹顶渐变 + 低多边形云（参考 V6 参考模型）
@@ -699,60 +660,8 @@ export default function LandfillScene3D({
     };
     // gravelTex 已在上面从 buildTextures() 解构得到
 
-    // 山谷地形（实体：顶面 + 底面 + 侧裙，盘山路开凿）
-    const terrainGroup = new THREE.Group();
+    // 场地地面 (无山体：仅保留带库区孔洞的平地，避免堆体悬空)
     {
-      const X0 = -220, X1 = 220, NX = 110, Z0 = -220, Z1 = 220, NZ = 110;
-      const yBase = -35;
-      const sx = (X1 - X0) / NX, sz = (Z1 - Z0) / NZ;
-      const W = NZ + 1;
-      const pos: number[] = [], col: number[] = [], idx: number[] = [];
-      const cLow = new THREE.Color(0x77a35e), cHigh = new THREE.Color(0x4a6b36), rock = new THREE.Color(0x8b7d66), tmp = new THREE.Color();
-      const cBase = new THREE.Color(0x3c3528);
-      const topAt = (i: number, j: number) => i * W + j;
-      for (let i = 0; i <= NX; i++) {
-        const x = X0 + sx * i;
-        for (let j = 0; j <= NZ; j++) {
-          const z = Z0 + sz * j, h = terrainH(x, z);
-          pos.push(x, h, z);
-          const gx = (terrainH(x + 2, z) - terrainH(x - 2, z)) / 4;
-          const gz = (terrainH(x, z + 2) - terrainH(x, z - 2)) / 4;
-          const slope = Math.hypot(gx, gz);
-          tmp.copy(cLow).lerp(cHigh, clamp((h - 2) / 40, 0, 1));
-          if (slope > 0.5) tmp.lerp(rock, Math.min(1, (slope - 0.5) * 1.5) * 0.7);
-          col.push(tmp.r, tmp.g, tmp.b);
-        }
-      }
-      const bottomStart = (NX + 1) * (NZ + 1);
-      for (let i = 0; i <= NX; i++) {
-        const x = X0 + sx * i;
-        for (let j = 0; j <= NZ; j++) {
-          const z = Z0 + sz * j;
-          pos.push(x, yBase, z);
-          col.push(cBase.r, cBase.g, cBase.b);
-        }
-      }
-      for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
-        const a = topAt(i, j), b = a + 1, a2 = topAt(i + 1, j), b2 = a2 + 1;
-        idx.push(a, b, a2, b, b2, a2);
-      }
-      for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
-        const a = bottomStart + topAt(i, j), b = a + 1, a2 = bottomStart + topAt(i + 1, j), b2 = a2 + 1;
-        idx.push(a, a2, b, b, a2, b2);
-      }
-      const skirt = (t0: number, t1: number) => { idx.push(t0, bottomStart + t0, t1, t1, bottomStart + t0, bottomStart + t1); };
-      for (let i = 0; i < NX; i++) { const a = topAt(i, 0), b = topAt(i + 1, 0); skirt(a, b); }
-      for (let i = 0; i < NX; i++) { const a = topAt(i, NZ), b = topAt(i + 1, NZ); skirt(a, b); }
-      for (let j = 0; j < NZ; j++) { const a = topAt(0, j), b = topAt(0, j + 1); skirt(a, b); }
-      for (let j = 0; j < NZ; j++) { const a = topAt(NX, j), b = topAt(NX, j + 1); skirt(a, b); }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      g.setIndex(idx); g.computeVertexNormals();
-      const mountain = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
-      mountain.receiveShadow = true; mountain.castShadow = true; terrainGroup.add(mountain);
-
-      // 场区地面（收窄到建模范围）
       const k = kv();
       const groundShape = new THREE.Shape();
       groundShape.moveTo(-210, -210); groundShape.lineTo(210, -210); groundShape.lineTo(210, 210); groundShape.lineTo(-210, 210); groundShape.closePath();
@@ -761,9 +670,9 @@ export default function LandfillScene3D({
       holePit.lineTo(4.7 * k, 34.9 * k); holePit.lineTo(44.4 * k, 34.9 * k); holePit.lineTo(44.4 * k, -34.9 * k); holePit.lineTo(-44.4 * k, -34.9 * k); holePit.closePath();
       groundShape.holes.push(holePit);
       const ground = new THREE.Mesh(new THREE.ShapeGeometry(groundShape), std(0xffffff, { map: grassTex, roughness: 1 }));
-      ground.rotation.x = -Math.PI / 2; ground.position.y = 0.01; ground.receiveShadow = true; terrainGroup.add(ground);
+      ground.rotation.x = -Math.PI / 2; ground.position.y = 0.01; ground.receiveShadow = true; scene.add(ground);
     }
-    regLayer('terrain', terrainGroup); regPick(terrainGroup, 'terrain');
+    // (山体 + 山体植被已移除)
 
     // 防渗衬层（黏土 + HDPE + 砂砾层 + 锚固沟）
     function pitGeometry(innerHW: number, innerHD: number, outerHW: number, outerHD: number, yBot: number, yTop: number) {
@@ -850,7 +759,7 @@ export default function LandfillScene3D({
       }
       // 终场覆盖（封场顶面：土壤层 + 植被层）
       coverGroup.add(mesh2(new THREE.BoxGeometry(hxAt(cap) * 2 + 0.9, 0.15, hzAt(cap) * 2 + 0.9), std(0xd5c6a8, { map: soilTex, roughness: 1 }), 0, cap + 0.075, 0, 0, false, true));
-      coverGroup.add(mesh2(new THREE.BoxGeometry(hxAt(cap) * 2 + 0.6, 0.12, hzAt(cap) * 2 + 0.6), std(0xb9d3a0, { map: grassTex, roughness: 1 }), 0, cap + 0.2, 0, 0, false, true));
+      coverGroup.add(mesh2(new THREE.BoxGeometry(hxAt(cap) * 2 + 0.6, 0.12, hzAt(cap) * 2 + 0.6), std(0xb9d3a0, { map: grassTex, roughness: 1 }), 0, cap + 0.22, 0, 0, false, true));
       // 作业面：顶面一侧保留裸露垃圾单元（正在作业的作业面，未覆土）
       {
         const topTx = Math.max(8, hxAt(cap) - 4), topTz = Math.max(8, hzAt(cap) - 4);
@@ -890,10 +799,24 @@ export default function LandfillScene3D({
       const wellMat = std(0x4a535c, { roughness: 0.5 }), headMat = std(0x3a4048);
       const xs: number[] = [];
       for (let x = -60; x <= 60; x += Math.max(15, 40 * sp)) xs.push(x);
+      // 收集井位后用 InstancedMesh 一次性提交（N × 2 mesh → 2 个 InstancedMesh，节省 ~38 draw call）
+      const wellPositions: Array<[number, number, number]> = [];
       for (const x of xs) for (const z of [-48 * k, 0, 48 * k]) {
-        gasGroup.add(mesh2(new THREE.CylinderGeometry(0.22, 0.22, 3, 12), wellMat, x * k, cap - 0.75, z, 0, true, true));
-        gasGroup.add(mesh2(new THREE.SphereGeometry(0.32, 12, 10), headMat, x * k, cap + 0.9, z, 0, true, false));
+        wellPositions.push([x * k, cap - 0.75, z]);
       }
+      const N = wellPositions.length;
+      const dummy = new THREE.Object3D();
+      const wellIM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.22, 3, 12), wellMat, N);
+      const headIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.32, 12, 10), headMat, N);
+      wellIM.castShadow = headIM.castShadow = true; wellIM.receiveShadow = headIM.receiveShadow = true;
+      for (let i = 0; i < N; i++) {
+        const [wx, wy, wz] = wellPositions[i];
+        dummy.position.set(wx, wy, wz); dummy.updateMatrix(); wellIM.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(wx, cap + 0.9, wz); dummy.updateMatrix(); headIM.setMatrixAt(i, dummy.matrix);
+      }
+      wellIM.instanceMatrix.needsUpdate = true;
+      headIM.instanceMatrix.needsUpdate = true;
+      gasGroup.add(wellIM, headIM);
       const flare = new THREE.Group();
       flare.add(mesh2(new THREE.BoxGeometry(1.8, 1.2, 1.8), std(0x6d7680), -130 * k, 0.6, 60 * k));
       flare.add(mesh2(new THREE.CylinderGeometry(0.35, 0.35, 4.2, 12), std(0x4a535c, { roughness: 0.5 }), -130 * k, 2.1, 60 * k, 0, true, true));
@@ -904,137 +827,12 @@ export default function LandfillScene3D({
     }
     regLayer('gas', gasGroup); regPick(gasGroup, 'gas');
 
-    // 环场截洪沟 + 地下水监测井
-    const drainGroup = new THREE.Group();
-    {
-      const k = kv();
-      const addRibbon = (pts: [number, number][], hw: number) => drainGroup.add(ribbon(pts.map(([x, z]) => [x * k, z * k] as [number, number]), hw, 0.14, () => 0, 0x8b939b, 0.9));
-      addRibbon([[-116, -84], [-116, 84]], 1.1);
-      addRibbon([[-116, 84], [116, 84]], 1.1);
-      addRibbon([[116, 84], [116, -84]], 1.1);
-      addRibbon([[-116, -84], [-13, -84]], 1.1);
-      addRibbon([[13, -84], [116, -84]], 1.1);
-      const gwMat = std(0xeef2f5, { roughness: 0.5 }), gwCap = std(0xc0392b, { roughness: 0.6 });
-      for (const [x, z] of [[-160, 0], [0, -96], [0, 100], [155, -30], [158, 30]]) {
-        drainGroup.add(mesh2(new THREE.CylinderGeometry(0.45, 0.45, 3, 8), gwMat, x * k, 1.5, z * k, 0, true, true));
-        drainGroup.add(mesh2(new THREE.BoxGeometry(1.1, 0.25, 1.1), gwCap, x * k, 3.12, z * k));
-      }
-    }
-    regLayer('drain', drainGroup); regPick(drainGroup, 'drain');
+    // 截洪沟 + 场内道路 + 地下水监测井 + 辅助建筑 + 作业车辆 —— 全部移除
+    //   (聚焦填埋场主体：库区 / 衬层 / 渗滤液 / 堆体 / 封场 / 填埋气 / 垃圾坝 / 调节池)
 
-    // 场内道路
-    const roadGroup = new THREE.Group();
-    {
-      const k = kv();
-      const roadMat = std(0xffffff, { map: asphaltTex, roughness: 1 });
-      roadGroup.add(mesh2(new THREE.BoxGeometry(5 * k, 0.1, 20 * k), roadMat, 0, 0.05, -80 * k));
-      roadGroup.add(mesh2(new THREE.BoxGeometry(208 * k, 0.1, 5 * k), roadMat, 0, 0.05, -76 * k));
-      roadGroup.add(mesh2(new THREE.BoxGeometry(5 * k, 0.1, 152 * k), roadMat, 104 * k, 0.05, 0));
-      roadGroup.add(mesh2(new THREE.BoxGeometry(5 * k, 0.1, 152 * k), roadMat, -104 * k, 0.05, 0));
-      roadGroup.add(mesh2(new THREE.BoxGeometry(208 * k, 0.1, 5 * k), roadMat, 0, 0.05, 76 * k));
-      roadGroup.add(mesh2(new THREE.BoxGeometry(42 * k, 0.1, 5 * k), roadMat, -125 * k, 0.05, -45 * k));
-      roadGroup.add(ribbon(MOUNTAIN_ROAD.map(([x, z]) => [x * k, z * k] as [number, number]), 1.6, 0.22, terrainH, 0x5f6367, 1));
-    }
-    regLayer('roads', roadGroup); regPick(roadGroup, 'road');
+    // 作业车辆已全部移除（用户：聚焦填埋场主体）
 
-    // 建构筑物
-    const buildGroup = new THREE.Group();
-    {
-      const k = kv();
-      const wMat = std(0xffffff, { roughness: 0.8 }), roofMat = std(0x6d7680);
-      const admin = new THREE.Group();
-      admin.add(mesh2(new THREE.BoxGeometry(18, 6, 10), wMat, -140 * k, 3, -60 * k));
-      admin.add(mesh2(new THREE.BoxGeometry(19, 0.35, 11), roofMat, -140 * k, 6.18, -60 * k));
-      buildGroup.add(admin);
-      const workshop = new THREE.Group();
-      workshop.add(mesh2(new THREE.BoxGeometry(14, 5, 9), wMat, -140 * k, 2.5, 60 * k));
-      workshop.add(mesh2(new THREE.BoxGeometry(15, 0.3, 10), roofMat, -140 * k, 5.15, 60 * k));
-      buildGroup.add(workshop);
-      const guard = new THREE.Group();
-      guard.add(mesh2(new THREE.BoxGeometry(4.5, 3.2, 4.5), wMat, 10 * k, 1.6, -87 * k));
-      guard.add(mesh2(new THREE.BoxGeometry(5, 0.2, 5), roofMat, 10 * k, 3.3, -87 * k));
-      buildGroup.add(guard);
-      const weigh = new THREE.Group();
-      weigh.add(mesh2(new THREE.BoxGeometry(3.6, 3, 3.6), wMat, -6.6 * k, 1.5, -83.2 * k));
-      weigh.add(mesh2(new THREE.BoxGeometry(4, 0.15, 4), roofMat, -6.6 * k, 3.08, -83.2 * k));
-      buildGroup.add(weigh);
-    }
-    regLayer('build', buildGroup); regPick(buildGroup, 'build');
-
-    // 作业车辆
-    const vehGroup = new THREE.Group();
-    function dumpTruck(color: number) {
-      const g = new THREE.Group();
-      g.add(mesh2(new THREE.BoxGeometry(3.6, 0.55, 1.6), std(0x3a4048), 0, 0.9, 0));
-      g.add(mesh2(new THREE.BoxGeometry(1.3, 1.15, 1.4), std(color), -1.25, 1.35, 0));
-      g.add(mesh2(new THREE.BoxGeometry(2.3, 0.8, 1.6), std(0xb0b4b8, { roughness: 0.7 }), 1.15, 1.28, 0));
-      for (const [x, z] of [[-1.3, 0.85], [1.2, 0.85], [-1.3, -0.85], [1.2, -0.85]]) {
-        const w = mesh2(new THREE.CylinderGeometry(0.45, 0.45, 0.32, 12), std(0x2b2f33, { roughness: 0.8 }), x, 0.45, z);
-        w.rotation.z = Math.PI / 2; g.add(w);
-      }
-      return g;
-    }
-    {
-      const k = kv();
-      const truckSpecs: [number, [number, number], number][] = [
-        [0xd9a441, [-40, 16], 0.7],
-        [0xc96a1e, [0, -78], -Math.PI / 2],
-        [0xb86a1d, [0, -86], Math.PI / 2],
-        [0x2f6db3, [104, 12], Math.PI / 2],
-        [0x7a5c1e, [48, -30], 0.3],
-        [0x8a6d2b, [-80, 40], -0.5],
-        [0x5577aa, [60, 40], 1.2],
-        [0x9a6d3b, [-60, -40], -1.0],
-      ];
-      const vn = Math.max(0, Math.min(8, Math.round(CUR.vehicleCount)));
-      truckSpecs.slice(0, vn).forEach(([color, [x, z], ry]) => {
-        const t = dumpTruck(color);
-        t.position.set(x * k, 0.12, z * k); t.rotation.y = ry; vehGroup.add(t);
-      });
-      // 作业面自卸车：停在堆体顶部裸露垃圾单元一侧（体现正在作业）
-      {
-        const topX = Math.max(6, (hxAt(capY()) - 12) * 0.5), topZ = Math.max(6, (hzAt(capY()) - 8) * 0.4);
-        const at = dumpTruck(0xc96a1e);
-        at.position.set(-topX, capY() + 0.62, -topZ); at.rotation.y = 0.5; vehGroup.add(at);
-      }
-      const comp = new THREE.Group();
-      comp.add(mesh2(new THREE.CylinderGeometry(0.5, 0.5, 1.75, 14), std(0x3a4048, { roughness: 0.5 }), 1.35, 0.5, 0));
-      comp.children[0].rotation.z = Math.PI / 2;
-      comp.add(mesh2(new THREE.BoxGeometry(2.6, 0.9, 1.7), std(0xd9a441), 0.1, 0.95, 0));
-      comp.position.set(-110 * k, 0.12, 29 * k); comp.rotation.y = 0.5; vehGroup.add(comp);
-    }
-    regLayer('veh', vehGroup); regPick(vehGroup, 'veh');
-
-    // 山体植被
-    const treeGroup = new THREE.Group();
-    {
-      const rnd = (() => { let s = 20260814; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; })();
-      const spots: [number, number, number][] = [];
-      let guard = 0;
-      const targetTrees = Math.max(30, Math.round(170 * CUR.treeDensity));
-      while (spots.length < targetTrees && guard < 6000) {
-        guard++;
-        const x = -250 + rnd() * 530, z = -245 + rnd() * 490;
-        const h = terrainH(x, z);
-        if (h < 0.7) continue;
-        if (Math.abs(x) < 178 && Math.abs(z) < 115) continue;
-        if (roadDist(x, z) < 7) continue;
-        spots.push([x, z, 0.75 + rnd() * 0.85]);
-      }
-      const trunkG = new THREE.CylinderGeometry(0.3, 0.42, 2.1, 5);
-      const canG = new THREE.ConeGeometry(2.4, 5.6, 7);
-      const trunkI = new THREE.InstancedMesh(trunkG, std(0x6b4a2f, { roughness: 1 }), spots.length);
-      const canI = new THREE.InstancedMesh(canG, std(0x4d7a3a, { roughness: 1 }), spots.length);
-      const d = new THREE.Object3D();
-      spots.forEach((s, i) => {
-        const y = terrainH(s[0], s[1]);
-        d.position.set(s[0], y + 1.05 * s[2], s[1]); d.scale.setScalar(s[2]); d.updateMatrix(); trunkI.setMatrixAt(i, d.matrix);
-        d.position.set(s[0], y + (2.1 + 2.8) * s[2], s[1]); d.updateMatrix(); canI.setMatrixAt(i, d.matrix);
-      });
-      trunkI.castShadow = canI.castShadow = true;
-      treeGroup.add(trunkI, canI);
-    }
-    regLayer('trees', treeGroup);
+    // (山体植被已随山体移除)
 
     // 文字标注
     const labelGroup = new THREE.Group();
@@ -1046,7 +844,7 @@ export default function LandfillScene3D({
       ctx.arcTo(8, 106, 8, 22, r); ctx.arcTo(8, 22, 504, 22, r); ctx.closePath(); ctx.fill();
       ctx.font = 'bold 44px "Microsoft YaHei","PingFang SC",sans-serif';
       ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 256, 66);
-      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      const tex = trackTex(new THREE.CanvasTexture(c)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true }));
       sp.scale.set(15, 3.75, 1); return sp;
     }
@@ -1056,114 +854,10 @@ export default function LandfillScene3D({
       L('填埋库区 · 分层作业', 0, cap + 4, 0);
       L('渗滤液调节池', 130 * k, 4.5, 0);
       L('火炬', -130 * k, 9.5, 60 * k);
-      L('环场截洪沟', 122 * k, 2, 40 * k);
-      L('导气井', -44 * k, cap + 5, 24 * k);
-      L('地下水监测井', 158 * k, 5, 0);
-      L('盘山进场路', -48 * k, terrainH(-48 * k, -156 * k) + 6, -156 * k);
     }
     regLayer('labels', labelGroup);
 
-    // ============== 风险热点浮标（A1 + B6 联动） ==============
-    // 每个浮标：底部发光球（脉冲动画）+ 顶部 risk 标签 sprite + 连线
-    const hotspotGroup = new THREE.Group();
-    const hotspots: { group: THREE.Group; ring: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; level: RiskItem['level']; pos: [number, number, number] }[] = [];
-    function makeHotspotTex(color: string) {
-      const c = document.createElement('canvas'); c.width = c.height = 128;
-      const ctx = c.getContext('2d')!;
-      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      g.addColorStop(0, color); g.addColorStop(0.45, color + 'aa'); g.addColorStop(1, color + '00');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
-      return new THREE.CanvasTexture(c);
-    }
-    function addHotspot(level: RiskItem['level'], pos: [number, number, number], title: string) {
-      const colorCss = riskColorCss(level);
-      const colorHex = riskColorHex(level);
-      const grp = new THREE.Group();
-      // 底部光晕（始终面向相机）
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: makeHotspotTex(colorCss),
-        color: 0xffffff,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }));
-      sprite.scale.set(14, 14, 1);
-      grp.add(sprite);
-      // 中心小环（脉冲用）
-      const ringGeo = new THREE.RingGeometry(0.4, 0.6, 24);
-      const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(pos[0], 0.1, pos[2]);
-      grp.add(ring);
-      // 顶部文字标签
-      const lbl = makeLabel(title);
-      lbl.position.set(pos[0], pos[1] + 6, pos[2]);
-      grp.add(lbl);
-      // 垂直连线（地面到标签）
-      const lineMat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55 });
-      const linePts = [new THREE.Vector3(pos[0], 0.1, pos[2]), new THREE.Vector3(pos[0], pos[1] + 5, pos[2])];
-      const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
-      grp.add(new THREE.Line(lineGeo, lineMat));
-      grp.position.set(0, 0, 0);
-      hotspotGroup.add(grp);
-      hotspots.push({ group: grp, ring, ringMat, level, pos });
-    }
-    // 演示热点：仅在没有真实诊断数据时展示样例（修复：原先无条件叠加导致双份热点）
-    if (!diagnosis?.risks?.length) {
-      const k = kv(), cap = capY();
-      const sample = [
-        { level: 'orange' as const, pos: riskPosition('边坡', k, cap), title: '⚠ 边坡 Fs=1.18（演示）' },
-        { level: 'yellow' as const, pos: riskPosition('渗滤液', k, cap), title: '▲ 渗滤液液位（演示）' },
-        { level: 'red' as const, pos: riskPosition('填埋气', k, cap), title: '● CH₄ 超限（演示）' },
-      ];
-      sample.forEach(s => addHotspot(s.level, s.pos, s.title));
-    }
-    // 接入诊断数据：把 risks 转成 hotspot
-    if (diagnosis?.risks?.length) {
-      const k = kv(), cap = capY();
-      diagnosis.risks.slice(0, 6).forEach(r => {
-        const pos = riskPosition(r.category, k, cap);
-        const tag = r.level === 'red' ? '●' : r.level === 'orange' ? '⚠' : r.level === 'yellow' ? '▲' : 'ℹ';
-        const title = `${tag} ${r.category} · ${r.title?.slice(0, 10) ?? r.value ?? ''}`;
-        addHotspot(r.level, pos, title);
-      });
-    }
-    scene.add(hotspotGroup);
-    hotspotGroup.visible = showHotspots;
-
-    // ============== 监测数据飘字标签（A2） ==============
-    const liveLabelGroup = new THREE.Group();
-    function makeLiveLabel(text: string, accent: string) {
-      const c = document.createElement('canvas'); c.width = 512; c.height = 128;
-      const ctx = c.getContext('2d')!;
-      ctx.fillStyle = 'rgba(10,18,26,0.78)';
-      ctx.strokeStyle = accent; ctx.lineWidth = 2;
-      const r = 22;
-      ctx.beginPath();
-      ctx.moveTo(8 + r, 22); ctx.arcTo(504, 22, 504, 106, r); ctx.arcTo(504, 106, 8, 106, r);
-      ctx.arcTo(8, 106, 8, 22, r); ctx.arcTo(8, 22, 504, 22, r); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.font = 'bold 36px "Microsoft YaHei","PingFang SC",sans-serif';
-      ctx.fillStyle = accent; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(text, 256, 64);
-      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true }));
-      sp.scale.set(18, 4.5, 1);
-      return sp;
-    }
-    // 渗滤液调节池（130,0）  ·  导气井平均（堆体）  ·  地下水井（158,0）
-    const liveLblLeach = makeLiveLabel('渗滤液 0.8 m', '#38bdf8');
-    liveLblLeach.position.set(130 * kv(), 8, 0);
-    liveLabelGroup.add(liveLblLeach);
-    const liveLblGas = makeLiveLabel('CH₄ 3.2 %', '#fbbf24');
-    liveLblGas.position.set(-44 * kv(), capY() + 12, 24 * kv());
-    liveLabelGroup.add(liveLblGas);
-    const liveLblGw = makeLiveLabel('水位 12.5 m', '#22d3ee');
-    liveLblGw.position.set(158, 10, 0);
-    liveLabelGroup.add(liveLblGw);
-    scene.add(liveLabelGroup);
-    liveLabelGroup.visible = showLiveLabels;
+    // 风险热点浮标 + 监测数据飘字 —— 已移除（聚焦填埋场主体）
 
     // ============== 渗滤液池水波纹动画（B7） ==============
     // 给 pondWater 加自定义 uniform 驱动顶点位移 + 动态液位
@@ -1181,8 +875,8 @@ export default function LandfillScene3D({
             void main() {
               vUv = uv;
               vec3 p = position;
-              // 液面高度跟随 uLevel（0..1）上下浮动
-              p.y = (uv.y - 0.5) * 0.4 + uLevel * 0.4;
+              // 液面高度跟随 uLevel（0..1）上下浮动（PlaneGeometry rotation.x=-PI/2 后，局部 +Z = 世界 +Y）
+              p.z = (uv.y - 0.5) * 0.4 + uLevel * 0.4;
               float w = sin(p.x * 0.4 + uTime * 1.4) * 0.12
                       + cos(p.y * 0.5 + uTime * 1.1) * 0.10
                       + sin((p.x + p.y) * 0.7 + uTime * 2.0) * 0.06;
@@ -1212,51 +906,7 @@ export default function LandfillScene3D({
       }
     });
 
-    // ============== 风险区着色（B6 增强：堆体顶部按风险等级染色）==============
-    // 在堆体顶部添加半透明风险色层（最高风险类别决定颜色）
-    const riskOverlayGroup = new THREE.Group();
-    {
-      const k = kv(), cap = capY();
-      // 根据 diagnosis 找出最严重的风险类别
-      let topLevel: RiskItem['level'] | null = null;
-      let topCategory = '';
-      if (diagnosis?.risks?.length) {
-        const order = ['red', 'orange', 'yellow', 'blue', 'green'];
-        const sorted = [...diagnosis.risks].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
-        if (sorted[0]) { topLevel = sorted[0].level; topCategory = sorted[0].category; }
-      }
-      // 染色：仅在最高风险为 红/橙/黄 时上色
-      if (topLevel && ['red', 'orange', 'yellow'].includes(topLevel)) {
-        const color = new THREE.Color(riskColorHex(topLevel));
-        // 在堆体顶部生成一个略大的盒子代表风险扩散区
-        const hx = hxAt(cap + 0.5) * 1.15;
-        const hz = hzAt(cap + 0.5) * 1.15;
-        const overlay = new THREE.Mesh(
-          new THREE.BoxGeometry(hx * 2, 0.08, hz * 2),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
-        );
-        overlay.position.set(0, cap + 0.7, 0);
-        riskOverlayGroup.add(overlay);
-        // 风险扩散波纹（脉冲圈）
-        for (let i = 0; i < 3; i++) {
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(2, 2.6, 32),
-            new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
-          );
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(0, cap + 0.75, 0);
-          ring.userData.phase = i * 0.6;
-          ring.userData.baseColor = color;
-          riskOverlayGroup.add(ring);
-        }
-        // 标识文字
-        const lbl = makeLabel(`${topLevel === 'red' ? '●' : topLevel === 'orange' ? '⚠' : '▲'} ${topCategory} 风险区`);
-        lbl.position.set(0, cap + 4, 0);
-        riskOverlayGroup.add(lbl);
-      }
-    }
-    scene.add(riskOverlayGroup);
-    riskOverlayGroup.visible = showHotspots;
+    // 风险区着色 —— 已移除（聚焦填埋场主体）
 
 
     // ---------------- 自定义轨道相机（旋转/平移/缩放，带阻尼） ----------------
@@ -1464,8 +1114,7 @@ export default function LandfillScene3D({
         setRoamStep(null);
         setClip(false);
       },
-      setHotspotsVisible(v) { hotspotGroup.visible = v; },
-      setLiveLabelsVisible(v) { liveLabelGroup.visible = v; },
+      // 风险热点 / 实时飘字 开关已移除
       /** 稳定化计算联动：产气结果→火炬增强；沉降结果→堆体可视化下沉（放大 60× 并在面板标注） */
       applyOgsResult(scenario, series) {
         const find = (name: string) => series.find(s => s.varName === name);
@@ -1486,49 +1135,7 @@ export default function LandfillScene3D({
     };
     if (externalApiRef) externalApiRef.current = apiRef.current;
 
-    // =============== IoT 传感器 3D 监测点（数字孪生感知层） ===============
-    // 5 个传感器按真实世界坐标显示为"地面锚环 + 立柱 + 顶部发光点"，颜色随实时风险等级
-    const sensorMarkers: {
-      key: SensorKey; group: THREE.Group;
-      head: THREE.Mesh; headMat: THREE.MeshBasicMaterial;
-      ringMat: THREE.MeshBasicMaterial; seed: number;
-    }[] = [];
-    {
-      const sensorLayerGroup = new THREE.Group();
-      sensorLayerGroup.name = 'sensor-markers';
-      for (const key of SENSOR_KEYS) {
-        const [bx, by, bz] = SENSOR_BASE_POS[key];
-        const hx = bx * kv(), hz = bz * kv();
-        const hy = Math.max(1.4, by * kh() * 0.92 + 0.6);
-        const g = new THREE.Group();
-        g.position.set(hx, 0.15, hz);
-        // 地面锚环
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-        const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.4, 28), ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        g.add(ring);
-        // 竖向立柱
-        const pole = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.22, 0.22, hy, 6),
-          new THREE.MeshBasicMaterial({ color: 0x475569 }),
-        );
-        pole.position.y = hy / 2;
-        g.add(pole);
-        // 顶部发光点
-        const headMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-        const head = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), headMat);
-        head.position.y = hy;
-        g.add(head);
-        sensorLayerGroup.add(g);
-        sensorMarkers.push({ key, group: g, head, headMat, ringMat, seed: key.length * 1.31 });
-      }
-      regLayer('sensors', sensorLayerGroup);
-      // 开发期可观测钩子：自动化测试读取监测点数量
-      if (import.meta.env.DEV) {
-        (window as any).__lmSensorMarkers = sensorMarkers.length;
-        (window as any).__lmPile = { hx: hxAt(0), hz: hzAt(0), cap: capY(), liftN: liftN(), volumeScale: CUR.volumeScale, valleyWidth: CUR.valleyWidth, pileHeight: CUR.pileHeight };
-      }
-    }
+    // IoT 传感器 3D 监测点 —— 已移除（聚焦填埋场主体）
 
     // ---------------- 主循环 ----------------
     const clock = new THREE.Clock();
@@ -1590,8 +1197,7 @@ export default function LandfillScene3D({
         ctl.t.z + ctl.r * Math.sin(ctl.phi) * Math.cos(ctl.theta));
       camera.lookAt(ctl.t);
       if (flameParts.flame) {
-        const ch4Live = iotSensorsRef.current.ch4?.value;
-        const ch4 = typeof ch4Live === 'number' ? (ch4Live / 100) * 8 : monitoringRef.current.ch4;
+        const ch4 = monitoringRef.current.ch4;
         // CH4 越高，火炬越大（0.5..8 → 0.7..2.2）；稳定化产气结果额外增强
         const scale = 0.7 + (ch4 / 8) * 1.5 + ogsGasBoost;
         flameParts.flame.scale.set(
@@ -1610,52 +1216,10 @@ export default function LandfillScene3D({
           coverGroup.position.y = ny;
         }
       }
-      // 风险热点脉冲（呼吸效果）
-      hotspots.forEach((hs, i) => {
-        const pulse = 1 + 0.35 * Math.sin(t * 2.2 + i * 0.7);
-        const child = hs.group.children[0] as THREE.Sprite;
-        child.scale.set(14 * pulse, 14 * pulse, 1);
-        hs.ringMat.opacity = 0.4 + 0.4 * Math.sin(t * 2.5 + i);
-        // 垂直上下浮动
-        hs.group.position.y = 0.6 * Math.sin(t * 1.4 + i * 0.9);
-      });
-      // 风险扩散波纹（脉冲圈）
-      riskOverlayGroup.children.forEach(child => {
-        const m = child as THREE.Mesh;
-        const ud = m.userData;
-        if (ud && ud.phase !== undefined) {
-          const phase = (ud.phase as number);
-          const r = 2 + 4.5 * ((t * 0.8 + phase) % 1.5) / 1.5;
-          m.scale.setScalar(r);
-          (m as THREE.Mesh<THREE.RingGeometry>).geometry = (m as THREE.Mesh<THREE.RingGeometry>).geometry;
-          const mat = m.material as THREE.MeshBasicMaterial;
-          mat.opacity = Math.max(0, 0.6 * (1 - (r - 2) / 4.5));
-        }
-      });
       // 水波动画时间 + 液位（来自监测数据）
       waterUniforms.uTime.value = t;
-      {
-        const wlLive = iotSensorsRef.current.waterLevel?.value;
-        const base = typeof wlLive === 'number' ? wlLive : monitoringRef.current.leachateLevel;
-        // 渗压水位 0.3..2.5m → uLevel 0..1
-        waterUniforms.uLevel.value = Math.max(0, Math.min(1, (base - 0.3) / 2.0));
-      }
+      waterUniforms.uLevel.value = Math.max(0, Math.min(1, (monitoringRef.current.leachateLevel - 0.3) / 2.0));
       doHover();
-      // IoT 传感器监测点：实时风险色 + 呼吸脉冲 + 坐标跟随（无数据时半透明灰）
-      {
-        const live = iotSensorsRef.current;
-        for (const mk of sensorMarkers) {
-          const r = live[mk.key];
-          const color = SENSOR_LEVEL_HEX[r?.level ?? 'green'];
-          mk.headMat.color.setHex(color);
-          mk.ringMat.color.setHex(color);
-          const alive = !!r;
-          const pulse = 1 + 0.25 * Math.sin(t * 3 + mk.seed);
-          mk.head.scale.setScalar((alive ? 1 : 0.35) * pulse);
-          mk.ringMat.opacity = (alive ? 0.5 : 0.12) + 0.25 * Math.sin(t * 2.5 + mk.seed);
-          if (r?.position) mk.group.position.set(r.position.x * kv(), 0.15, r.position.z * kv());
-        }
-      }
       composer.render();
     };
     animate();
@@ -1695,6 +1259,7 @@ export default function LandfillScene3D({
           mats.forEach(m => m.dispose());
         }
       });
+      allTextures.forEach(t => t.dispose());   // CanvasTexture GPU 回收（HMR 安全）
       renderer.dispose();
       composer.dispose();
       // IBL 环境贴图 dispose（PMREM 输出）
@@ -1707,8 +1272,6 @@ export default function LandfillScene3D({
   }, [height, debouncedGeoKey, timeOfDay, diagnosis, quality]);
 
   useEffect(() => { autoRotateRef.current = autoRotate; }, [autoRotate]);
-  useEffect(() => { apiRef.current?.setHotspotsVisible?.(showHotspots); }, [showHotspots]);
-  useEffect(() => { apiRef.current?.setLiveLabelsVisible?.(showLiveLabels); }, [showLiveLabels]);
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
@@ -1759,7 +1322,7 @@ export default function LandfillScene3D({
   // ---------------- 渲染 ----------------
   return (
     <div className="relative w-full overflow-hidden select-none" style={{ height, background: '#0d141a' }}>
-      <div ref={mountRef} className="absolute inset-0" aria-label="山谷型生活垃圾填埋场三维模型" />
+      <div ref={mountRef} className="absolute inset-0" aria-label="生活垃圾卫生填埋场三维模型" />
 
       {webglError ? (
         <div className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm" style={{ color: '#ff9d8a', background: '#0d141a' }}>
@@ -1777,7 +1340,7 @@ export default function LandfillScene3D({
                 <h1 style={{ fontSize: 16, margin: 0, color: '#7fd4ff', letterSpacing: 0.5 }}>填埋场三维模型</h1>
                 <button onClick={() => setCtrlOpen(false)} style={{ ...ctrlBtn, padding: '1px 7px', fontSize: 11 }} title="收起面板">收起</button>
               </div>
-              <div style={{ fontSize: 11, color: '#9fb3bd', marginBottom: 10 }}>山谷型生活垃圾卫生填埋场 · 示意（单位：m）</div>
+              <div style={{ fontSize: 11, color: '#9fb3bd', marginBottom: 10 }}>生活垃圾卫生填埋场 · 示意（单位：m）</div>
 
               <fieldset style={{ border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, margin: '0 0 10px', padding: '6px 8px 8px' }}>
                 <legend style={{ fontSize: 12, color: '#8fd0a8', padding: '0 4px' }}>图层</legend>
@@ -1849,15 +1412,8 @@ export default function LandfillScene3D({
                 </div>
               </fieldset>
 
-              <fieldset style={{ border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, margin: '10px 0 0', padding: '6px 8px 8px' }}>
-                <legend style={{ fontSize: 12, color: '#8fd0a8', padding: '0 4px' }}>叠加层（A1/A2）</legend>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, lineHeight: 1.9, cursor: 'pointer', userSelect: 'none', color: '#dfe9ee' }}>
-                  <input type="checkbox" checked={showHotspots} onChange={e => setShowHotspots(e.target.checked)} style={{ accentColor: '#4fc3f7' }} />风险热点浮标（脉动 + 标签）
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, lineHeight: 1.9, cursor: 'pointer', userSelect: 'none', color: '#dfe9ee' }}>
-                  <input type="checkbox" checked={showLiveLabels} onChange={e => setShowLiveLabels(e.target.checked)} style={{ accentColor: '#4fc3f7' }} />监测数据飘字（液位 / CH₄ / 水位）
-                </label>
-              </fieldset>
+              {/* 叠加层（风险热点/监测飘字）已移除 */}
+
             </div>
           ) : (
             <button onClick={() => setCtrlOpen(true)} className="z-20" style={{ ...panelBase, top: 12, left: 12, padding: '6px 12px', fontSize: 12, color: '#7fd4ff', cursor: 'pointer' }}>
