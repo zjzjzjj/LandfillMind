@@ -536,7 +536,7 @@ export const KB_ENTRIES: KBEntry[] = [
    clause:'同轴双通道(内注+环空抽)；承压≥150kPa；筛管43%厚度处；管距5~8m。',
    related:['segmentedCyclicGas','gasShortCircuit']},
 
-  {key:'numericalSim',module:'m6',kw:['数值模拟','COMSOL','渗流传质耦合','参数反演','多物理场','双孔隙模型'],
+  {key:'numericalGasWater',module:'m6',kw:['数值模拟','COMSOL','渗流传质耦合','参数反演','多物理场','双孔隙模型'],
    q:'注气驱水的数值模拟怎么做？',
    pro:'用COMSOL构建渗流-传质耦合多物理场模型；垃圾为双孔隙连续介质（裂隙域+基质域）；液相Richards扩展方程+气相运移方程+两域一阶传质交换；双峰van Genuchten持水曲线+Mualem-vG相对渗透率。三级标定：室内参数标定→单井试验反演（COMSOL LiveLink+MATLAB，RRMSE≤15%）→群井数据校核（偏差>20%迭代）。',
    easy:'开工前先在电脑里把"水怎么流、气怎么走"算一遍。用COMSOL双孔隙模型，参数先从室内测、再用单井试验反演校准，误差控制在15%以内。',
@@ -815,9 +815,10 @@ import { EXPANDED_KB } from '../knowledge-base/06-kb-data/kb-entries-expanded';
 import { EXPANDED_KB_BATCH2 } from '../knowledge-base/06-kb-data/kb-entries-expanded-batch2';
 import { EXPANDED_KB_BATCH3 } from '../knowledge-base/06-kb-data/kb-entries-expanded-batch3';
 import { SYNTHETIC_QA_ENTRIES } from '../knowledge-base/06-kb-data/kb-entries-synthetic-qa';
+import { EXPANDED_KB_BATCH4 } from '../knowledge-base/06-kb-data/kb-entries-expanded-batch4';
 const _mergedKBKeys = new Set(KB_ENTRIES.map(e => e.key));
 let _added = 0;
-for (const e of [...EXPANDED_KB, ...EXPANDED_KB_BATCH2, ...EXPANDED_KB_BATCH3, ...SYNTHETIC_QA_ENTRIES]) {
+for (const e of [...EXPANDED_KB, ...EXPANDED_KB_BATCH2, ...EXPANDED_KB_BATCH3, ...SYNTHETIC_QA_ENTRIES, ...EXPANDED_KB_BATCH4]) {
   if (!_mergedKBKeys.has(e.key)) {
     KB_ENTRIES.push(e);
     _mergedKBKeys.add(e.key);
