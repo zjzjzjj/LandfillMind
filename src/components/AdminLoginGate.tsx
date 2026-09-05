@@ -53,14 +53,15 @@ export function AdminLoginGate({ onAuthenticated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [authHint, setAuthHint] = useState<string>('检查认证配置...');
+  const [devTokenActive, setDevTokenActive] = useState(false);
 
   // 检查服务端认证状态
   useEffect(() => {
     fetch('/api/admin/auth-status')
       .then(r => r.json())
       .then(d => {
-        if (d.enabled) setAuthHint('已启用 ADMIN_TOKEN 环境变量');
-        else setAuthHint(d.hint ?? '请联系系统管理员');
+        if (d.enabled) { setAuthHint('已启用 ADMIN_TOKEN 环境变量'); setDevTokenActive(false); }
+        else { setAuthHint(d.hint ?? '请联系系统管理员'); setDevTokenActive(true); }
         })
       .catch(() => setAuthHint('无法连接服务器'));
   }, []);
@@ -166,7 +167,9 @@ export function AdminLoginGate({ onAuthenticated }: Props) {
         </button>
 
         <p className="text-[10px] mt-4 text-center" style={{ color: 'var(--text-muted)' }}>
-          提示：开发模式默认 token = <code>landfillmind-dev-2026</code>
+          {devTokenActive
+            ? <>提示：开发模式默认 token = <code>landfillmind-dev-2026</code></>
+            : <>提示：请输入 Render 环境变量中配置的 <code>ADMIN_TOKEN</code>（在控制台 Environment 页可查看）</>}
         </p>
       </div>
     </div>
